@@ -1,6 +1,7 @@
 /**
  * ENHANCED DASHBOARD - Main JARVIS Interface
  * Refactored layout: Vertical links to right of central HUD, clean architecture
+ * OPTIMIZED FOR CHROMEBOOK: Smaller panels, responsive grid
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -70,6 +71,9 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
     }
   }, [system])
 
+  // Agent status should always start as IDLE on initial render
+  const agentStatus = system.agentStatus || 'IDLE';
+
   const dateInfo = (() => {
     const now = new Date()
     const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
@@ -102,11 +106,11 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
         <div className="storage-panel panel-enhanced">
           <div className="panel-title text-glow">💾 STORAGE</div>
           <div className="metric-row">
-            <span>Full Capacity:</span>
+            <span>Full:</span>
             <span className="value">116 G</span>
           </div>
           <div className="metric-row">
-            <span>Free Capacity:</span>
+            <span>Free:</span>
             <span className="value">20 G</span>
           </div>
           <div className="storage-bar">
@@ -115,45 +119,47 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
         </div>
 
         <div className="power-panel panel-enhanced">
-          <div className="panel-title text-glow">⚡ PERFORMANCE</div>
+          <div className="panel-title text-glow">⚡ POWER</div>
           <div className="power-gauge">
             <div className="gauge-circle">
               <div className="gauge-value">{systemLoad.toFixed(0)}%</div>
             </div>
           </div>
-          <div className="power-status">High Performance</div>
+          <div className="power-status">ACTIVE</div>
         </div>
 
         <div className="control-grid panel-enhanced">
           <div className="panel-title text-glow">⚙️ CONTROL</div>
-          <button className="control-btn">EJECT SPACE</button>
-          <button className="control-btn">REBOOT MATRIX</button>
-          <button className="control-btn">PURGE BUFFER</button>
+          <button className="control-btn">EJECT</button>
+          <button className="control-btn">REBOOT</button>
+          <button className="control-btn">PURGE</button>
         </div>
       </div>
 
       {/* CENTER PANEL - Core HUD Ring */}
       <div className="panel-center-enhanced">
         <div className="ring-visualizer">
-          <svg viewBox="0 0 400 400" className="ring-svg">
-            <circle cx="200" cy="200" r="180" className="ring ring-1" />
-            <circle cx="200" cy="200" r="140" className="ring ring-2" />
-            <circle cx="200" cy="200" r="100" className="ring ring-3" />
-            <circle cx="200" cy="200" r="60" className="ring ring-4" />
-            <circle cx="200" cy="200" r="40" className="ring-center" />
-            <text x="200" y="210" className="ring-text">JARVIS</text>
-          </svg>
-        </div>
+          <div className="ring-svg-container">
+            <svg viewBox="0 0 400 400" className="ring-svg">
+              <circle cx="200" cy="200" r="180" className="ring ring-1" />
+              <circle cx="200" cy="200" r="140" className="ring ring-2" />
+              <circle cx="200" cy="200" r="100" className="ring ring-3" />
+              <circle cx="200" cy="200" r="60" className="ring ring-4" />
+              <circle cx="200" cy="200" r="40" className="ring-center" />
+              <text x="200" y="210" className="ring-text">JARVIS</text>
+            </svg>
+          </div>
 
-        {/* Vertical Navigation Links - Positioned to the right of HUD */}
-        <div className="vertical-nav-links">
-          {NAV_LINKS.map((link, index) => (
-            <div key={index} className="nav-link-item">
-              <span className={`status-dot ${link.status ? 'active' : 'inactive'}`}></span>
-              <span className="nav-link-icon">{link.icon}</span>
-              <span className="nav-link-name">{link.name}</span>
-            </div>
-          ))}
+          {/* Vertical Navigation Links - Positioned to the right of HUD */}
+          <div className="vertical-nav-links">
+            {NAV_LINKS.map((link, index) => (
+              <div key={index} className="nav-link-item">
+                <span className={`status-dot ${link.status ? 'active' : 'inactive'}`}></span>
+                <span className="nav-link-icon">{link.icon}</span>
+                <span className="nav-link-name">{link.name}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Text Terminal - Command Input */}
@@ -178,11 +184,11 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
             <span className="value">2.241.167.250</span>
           </div>
           <div className="network-item">
-            <span>Download:</span>
+            <span>Down:</span>
             <span className="value">5.2 Mbps</span>
           </div>
           <div className="network-item">
-            <span>Upload:</span>
+            <span>Up:</span>
             <span className="value">2.1 Mbps</span>
           </div>
         </div>
@@ -190,7 +196,7 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
         <AgentMonitor orchestrator={system.orchestrator} />
 
         <div className="ad-panel panel-enhanced">
-          <div className="panel-title text-glow">💰 AD PERFORMANCE</div>
+          <div className="panel-title text-glow">💰 ADS</div>
           {system.metrics?.adPerformance && (
             <>
               <div className="metric-row">
@@ -201,14 +207,6 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
                 <span>ROAS:</span>
                 <span className="value">{system.metrics.adPerformance.roasRatio}x</span>
               </div>
-              <div className="performer-row optimal">
-                <span className="label">TOP:</span>
-                <span className="name">{system.metrics.adPerformance.topPerformer}</span>
-              </div>
-              <div className="performer-row weak">
-                <span className="label">WEAK:</span>
-                <span className="name">{system.metrics.adPerformance.worstPerformer}</span>
-              </div>
             </>
           )}
         </div>
@@ -217,20 +215,20 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
       {/* BOTTOM STATUS BAR */}
       <div className="status-bar-enhanced">
         <div className="status-item">
-          <span className="label">SYSTEM:</span>
+          <span className="label">SYS:</span>
           <span className={'value ' + (system.isReady ? 'online' : 'offline')}>
             {system.isReady ? '● ONLINE' : '● OFFLINE'}
           </span>
         </div>
         <div className="status-item">
-          <span className="label">MODE:</span>
-          <span className="value">
-            {system.isProcessing ? '⚡ PROCESSING' : '✓ READY'}
+          <span className="label">AGENT:</span>
+          <span className={'value ' + (agentStatus === 'IDLE' ? 'online' : 'offline')}>
+            {agentStatus}
           </span>
         </div>
         <div className="status-item">
           <span className="label">API:</span>
-          <span className="value">GROQ ACTIVE</span>
+          <span className="value">GROQ</span>
         </div>
       </div>
     </div>

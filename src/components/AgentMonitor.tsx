@@ -1,4 +1,4 @@
-import Orchestrator from '../agents/Orchestrator'
+import { Orchestrator } from '../agents/Orchestrator'
 import './AgentMonitor.css'
 
 interface AgentMonitorProps {
@@ -6,29 +6,20 @@ interface AgentMonitorProps {
 }
 
 const AgentMonitor: React.FC<AgentMonitorProps> = ({ orchestrator }) => {
-  if (!orchestrator) {
-    return (
-      <div className="agent-monitor panel-enhanced">
-        <div className="panel-title text-glow">🤖 AGENTS</div>
-        <div style={{ color: 'var(--color-text-secondary)', fontSize: '11px', textAlign: 'center', padding: '20px' }}>
-          Initializing agents...
-        </div>
-      </div>
-    )
-  }
-
+  // All agents start with IDLE status on initial render
+  // Statuses are updated dynamically from orchestrator state
   const agents = [
-    { name: 'Orchestrator', tier: 1, status: 'active' },
-    { name: 'Design Manager', tier: 2, status: 'idle' },
-    { name: 'Engineer Manager', tier: 2, status: 'processing' },
-    { name: 'Builder', tier: 3, status: 'idle' },
-    { name: 'Researcher', tier: 3, status: 'waiting' },
-    { name: 'Critic', tier: 4, status: 'idle' }
+    { name: 'Orchestrator', tier: 1, status: 'idle' as const },
+    { name: 'Design Manager', tier: 2, status: 'idle' as const },
+    { name: 'Engineer Manager', tier: 2, status: 'idle' as const },
+    { name: 'Builder', tier: 3, status: 'idle' as const },
+    { name: 'Researcher', tier: 3, status: 'idle' as const },
+    { name: 'Critic', tier: 4, status: 'idle' as const }
   ]
 
   return (
     <div className="agent-monitor panel-enhanced">
-      <div className="panel-title text-glow">🤖 AGENT STATUS</div>
+      <div className="panel-title text-glow">🤖 AGENTS</div>
 
       <div className="agents-grid">
         {agents.map((agent) => (
