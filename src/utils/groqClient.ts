@@ -1,48 +1,66 @@
-import Groq from 'groq-sdk'
-import { AgentMessage } from '../types'
+import axios, { AxiosInstance } from 'axios'
+
+interface Message {
+  role: 'user' | 'assistant'
+  content: string
+}
 
 class GroqClient {
-  private client: Groq
-  private model: string
-  private conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
+  private apiKey: string
+  private baseURL = 'https://api.groq.com/openai/v1'
+  private client: AxiosInstance
+  private conversationHistory: Message[] = []
+  private maxHistoryLength = 10
 
-  constructor(apiKey: string, model: string = 'mixtral-8x7b-32768') {
-    if (!apiKey) {
-      throw new Error('Groq API key is required')
-    }
-    
-    this.client = new Groq({ apiKey, dangerouslyAllowBrowser: true })
-    this.model = model
+  constructor(apiKey: string) {
+    this.apiKey = apiKey
+    this.client = axios.create({
+      baseURL: this.baseURL,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    })
   }
 
   /**
-   * Send a message to Groq and get a response
+   * Send a message to Groq
    */
   async sendMessage(userMessage: string, systemPrompt?: string): Promise<string> {
     try {
+      // Add user message to history
       this.conversationHistory.push({
         role: 'user',
         content: userMessage
       })
 
-      const messages = systemPrompt
-        ? [
-            { role: 'system' as const, content: systemPrompt },
-            ...this.conversationHistory
-          ]
-        : this.conversationHistory
+      // Build messages array
+      const messages: Message[] = []
 
-      const response = await this.client.chat.completions.create({
-        messages: messages as any,
-        model: this.model,
+      if (systemPrompt) {
+        messages.push({
+          role: 'user',
+          content: systemPrompt
+        })
+      }
+
+      // Add recent conversation history
+      messages.push(
+        ...this.conversationHistory.slice(-this.maxHistoryLength)
+      )
+
+      const response = await this.client.post('/chat/completions', {
+        model: 'mixtral-8x7b-32768',
+        messages,
         temperature: 0.7,
-        max_tokens: 1024,
-        top_p: 1,
-        stream: false
+        max_tokens: 512,
+        top_p: 0.9
       })
 
-      const assistantMessage = response.choices[0]?.message?.content || ''
-      
+      const assistantMessage =
+        response.data.choices[0]?.message?.content || 'No response generated'
+
+      // Add assistant response to history
       this.conversationHistory.push({
         role: 'assistant',
         content: assistantMessage
@@ -50,108 +68,23 @@ class GroqClient {
 
       return assistantMessage
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-      console.error('❌ Groq API error:', errorMsg)
+      console.error('Groq API error:', error)
       throw error
     }
   }
 
   /**
-   * Stream a message response
+   * Load conversation history
    */
-  async *streamMessage(userMessage: string, systemPrompt?: string): AsyncGenerator<string> {
-    try {
-      this.conversationHistory.push({
-        role: 'user',
-        content: userMessage
-      })
-
-      const messages = systemPrompt
-        ? [
-            { role: 'system' as const, content: systemPrompt },
-            ...this.conversationHistory
-          ]
-        : this.conversationHistory
-
-      const stream = await this.client.chat.completions.create({
-        messages: messages as any,
-        model: this.model,
-        temperature: 0.7,
-        max_tokens: 1024,
-        stream: true
-      })
-
-      let fullResponse = ''
-
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || ''
-        if (content) {
-          fullResponse += content
-          yield content
-        }
-      }
-
-      this.conversationHistory.push({
-        role: 'assistant',
-        content: fullResponse
-      })
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-      console.error('❌ Groq streaming error:', errorMsg)
-      throw error
-    }
+  loadHistory(history: Message[]): void {
+    this.conversationHistory = history.slice(-this.maxHistoryLength)
   }
 
   /**
-   * Parse a user goal into an execution plan
+   * Get conversation history
    */
-  async parseGoal(goalDescription: string): Promise<any> {
-    const systemPrompt = `You are JARVIS, an autonomous agent orchestrator. Analyze the user's goal and break it down into a structured execution plan (DAG - Directed Acyclic Graph).
-
-Respond ONLY with valid JSON in this format:
-{
-  "title": "Goal title",
-  "description": "Detailed goal description",
-  "tasks": [
-    {
-      "id": "task_1",
-      "title": "Task title",
-      "description": "Task description",
-      "tier": 1-4,
-      "agent": "Agent name",
-      "dependencies": ["task_ids"]
-    }
-  ]
-}`
-
-    const response = await this.sendMessage(goalDescription, systemPrompt)
-    
-    try {
-      // Extract JSON from response
-      const jsonMatch = response.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0])
-      }
-      throw new Error('Invalid JSON in response')
-    } catch (error) {
-      console.error('Failed to parse goal response:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Get code generation from a task description
-   */
-  async generateCode(taskDescription: string, context?: string): Promise<string> {
-    const systemPrompt = `You are EVA, the Builder agent. Generate clean, production-ready React/TypeScript code based on the task description.
-
-Return ONLY the code without markdown formatting or explanation.`
-
-    const userMessage = context
-      ? `${context}\n\nTask: ${taskDescription}`
-      : taskDescription
-
-    return await this.sendMessage(userMessage, systemPrompt)
+  getHistory(): Message[] {
+    return [...this.conversationHistory]
   }
 
   /**
@@ -160,35 +93,18 @@ Return ONLY the code without markdown formatting or explanation.`
   clearHistory(): void {
     this.conversationHistory = []
   }
-
-  /**
-   * Get conversation history for persistence
-   */
-  getHistory(): Array<{ role: 'user' | 'assistant'; content: string }> {
-    return [...this.conversationHistory]
-  }
-
-  /**
-   * Load conversation history
-   */
-  loadHistory(history: Array<{ role: 'user' | 'assistant'; content: string }>): void {
-    this.conversationHistory = [...history]
-  }
 }
 
-// Singleton instance
-let groqInstance: GroqClient | null = null
+let groqClientInstance: GroqClient | null = null
 
-export const initializeGroqClient = (apiKey: string, model?: string): GroqClient => {
-  groqInstance = new GroqClient(apiKey, model)
-  return groqInstance
+export const initializeGroqClient = (apiKey: string): GroqClient => {
+  groqClientInstance = new GroqClient(apiKey)
+  return groqClientInstance
 }
 
 export const getGroqClient = (): GroqClient => {
-  if (!groqInstance) {
+  if (!groqClientInstance) {
     throw new Error('Groq client not initialized. Call initializeGroqClient first.')
   }
-  return groqInstance
+  return groqClientInstance
 }
-
-export default GroqClient

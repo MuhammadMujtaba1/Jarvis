@@ -1,11 +1,55 @@
-import { MemoryRecord } from '../types'
+interface DBSchema {
+  goals: Goal
+  tasks: Task
+  conversationHistory: Message
+  metrics: BusinessMetrics
+}
 
-class IndexedDBManager {
+interface Goal {
+  id: string
+  title: string
+  description: string
+  createdAt: number
+  status: 'planning' | 'executing' | 'completed' | 'failed'
+  taskDAG: Task[]
+  userContext: {
+    habits: Record<string, any>
+    preferences: Record<string, any>
+    history: string[]
+  }
+}
+
+interface Task {
+  id: string
+  title: string
+  description: string
+  status: 'pending' | 'executing' | 'completed' | 'failed'
+  dependencies: string[]
+  priority: 'high' | 'medium' | 'low'
+  tier: 1 | 2 | 3 | 4
+  assignedAgent: string
+  createdAt: number
+}
+
+interface Message {
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: number
+}
+
+interface BusinessMetrics {
+  weeklyDownloads: number
+  weeklyRevenue: number
+  videoViews: number
+  adSpend: number
+  roas: number
+}
+
+class IndexedDBWrapper {
   private dbName: string
   private db: IDBDatabase | null = null
-  private version = 1
 
-  constructor(dbName: string = 'JarvisDB') {
+  constructor(dbName: string) {
     this.dbName = dbName
   }
 
@@ -14,12 +58,15 @@ class IndexedDBManager {
    */
   async initialize(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, this.version)
+      const request = indexedDB.open(this.dbName, 1)
 
-      request.onerror = () => reject(request.error)
+      request.onerror = () => {
+        reject(new Error(`Failed to open database: ${request.error}`))
+      }
+
       request.onsuccess = () => {
         this.db = request.result
-        console.log('✅ IndexedDB initialized')
+        console.log('📦 IndexedDB initialized')
         resolve()
       }
 
@@ -27,73 +74,18 @@ class IndexedDBManager {
         const db = (event.target as IDBOpenDBRequest).result
 
         // Create object stores
-        const stores = ['goals', 'tasks', 'memory', 'executions', 'conversationHistory']
-        stores.forEach((storeName) => {
-          if (!db.objectStoreNames.contains(storeName)) {
-            db.createObjectStore(storeName, { keyPath: 'id' })
-            console.log(`📦 Created object store: ${storeName}`)
-          }
-        })
-      }
-    })
-  }
-
-  /**
-   * Save a memory record
-   */
-  async saveMemory(record: MemoryRecord): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized')
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(['memory'], 'readwrite')
-      const store = transaction.objectStore('memory')
-      const request = store.put(record)
-
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve()
-    })
-  }
-
-  /**
-   * Get a memory record by ID
-   */
-  async getMemory(id: string): Promise<MemoryRecord | undefined> {
-    if (!this.db) throw new Error('Database not initialized')
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(['memory'], 'readonly')
-      const store = transaction.objectStore('memory')
-      const request = store.get(id)
-
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result)
-    })
-  }
-
-  /**
-   * Query memories by type
-   */
-  async queryMemories(
-    type: MemoryRecord['type'],
-    limit: number = 50
-  ): Promise<MemoryRecord[]> {
-    if (!this.db) throw new Error('Database not initialized')
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(['memory'], 'readonly')
-      const store = transaction.objectStore('memory')
-      const request = store.getAll()
-
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => {
-        const results = request.result
-          .filter((record: MemoryRecord) => record.type === type)
-          .sort(
-            (a: MemoryRecord, b: MemoryRecord) =>
-              (b.metadata.relevanceScore || 0) - (a.metadata.relevanceScore || 0)
-          )
-          .slice(0, limit)
-        resolve(results)
+        if (!db.objectStoreNames.contains('goals')) {
+          db.createObjectStore('goals', { keyPath: 'id' })
+        }
+        if (!db.objectStoreNames.contains('tasks')) {
+          db.createObjectStore('tasks', { keyPath: 'id' })
+        }
+        if (!db.objectStoreNames.contains('conversationHistory')) {
+          db.createObjectStore('conversationHistory', { autoIncrement: true })
+        }
+        if (!db.objectStoreNames.contains('metrics')) {
+          db.createObjectStore('metrics', { keyPath: 'timestamp' })
+        }
       }
     })
   }
@@ -101,7 +93,7 @@ class IndexedDBManager {
   /**
    * Save a goal
    */
-  async saveGoal(goal: any): Promise<void> {
+  async saveGoal(goal: Goal): Promise<void> {
     if (!this.db) throw new Error('Database not initialized')
 
     return new Promise((resolve, reject) => {
@@ -117,7 +109,7 @@ class IndexedDBManager {
   /**
    * Get all goals
    */
-  async getGoals(): Promise<any[]> {
+  async getGoals(): Promise<Goal[]> {
     if (!this.db) throw new Error('Database not initialized')
 
     return new Promise((resolve, reject) => {
@@ -126,30 +118,14 @@ class IndexedDBManager {
       const request = store.getAll()
 
       request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result)
-    })
-  }
-
-  /**
-   * Save a task
-   */
-  async saveTask(task: any): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized')
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(['tasks'], 'readwrite')
-      const store = transaction.objectStore('tasks')
-      const request = store.put(task)
-
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve()
+      request.onsuccess = () => resolve(request.result || [])
     })
   }
 
   /**
    * Get all tasks
    */
-  async getTasks(): Promise<any[]> {
+  async getTasks(): Promise<Task[]> {
     if (!this.db) throw new Error('Database not initialized')
 
     return new Promise((resolve, reject) => {
@@ -158,87 +134,62 @@ class IndexedDBManager {
       const request = store.getAll()
 
       request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result)
+      request.onsuccess = () => resolve(request.result || [])
     })
   }
 
   /**
    * Save conversation history
    */
-  async saveConversationHistory(
-    history: Array<{ role: 'user' | 'assistant'; content: string }>
-  ): Promise<void> {
+  async saveConversationHistory(history: Message[]): Promise<void> {
     if (!this.db) throw new Error('Database not initialized')
-
-    const record = {
-      id: 'current-conversation',
-      history,
-      timestamp: Date.now()
-    }
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(['conversationHistory'], 'readwrite')
       const store = transaction.objectStore('conversationHistory')
-      const request = store.put(record)
+      const request = store.clear()
 
       request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve()
+
+      request.onsuccess = () => {
+        history.forEach((msg) => {
+          store.add(msg)
+        })
+        resolve()
+      }
     })
   }
 
   /**
    * Get conversation history
    */
-  async getConversationHistory(): Promise<Array<{ role: 'user' | 'assistant'; content: string }> | null> {
+  async getConversationHistory(): Promise<Message[]> {
     if (!this.db) throw new Error('Database not initialized')
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(['conversationHistory'], 'readonly')
       const store = transaction.objectStore('conversationHistory')
-      const request = store.get('current-conversation')
+      const request = store.getAll()
 
       request.onerror = () => reject(request.error)
-      request.onsuccess = () => {
-        const result = request.result
-        resolve(result?.history || null)
-      }
-    })
-  }
-
-  /**
-   * Clear all data
-   */
-  async clearAll(): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized')
-
-    return new Promise((resolve, reject) => {
-      const stores = ['goals', 'tasks', 'memory', 'executions', 'conversationHistory']
-      const transaction = this.db!.transaction(stores, 'readwrite')
-
-      stores.forEach((storeName) => {
-        transaction.objectStore(storeName).clear()
-      })
-
-      transaction.onerror = () => reject(transaction.error)
-      transaction.oncomplete = () => resolve()
+      request.onsuccess = () => resolve(request.result || [])
     })
   }
 }
 
-// Singleton instance
-let dbInstance: IndexedDBManager | null = null
+let dbInstance: IndexedDBWrapper | null = null
 
-export const initializeDatabase = async (dbName?: string): Promise<IndexedDBManager> => {
-  dbInstance = new IndexedDBManager(dbName)
+export const initializeDatabase = async (dbName: string = 'JarvisDB'): Promise<IndexedDBWrapper> => {
+  dbInstance = new IndexedDBWrapper(dbName)
   await dbInstance.initialize()
   return dbInstance
 }
 
-export const getDatabase = (): IndexedDBManager => {
+export const getDatabase = (): IndexedDBWrapper => {
   if (!dbInstance) {
     throw new Error('Database not initialized. Call initializeDatabase first.')
   }
   return dbInstance
 }
 
-export default IndexedDBManager
+export type { Goal, Task, Message, BusinessMetrics }

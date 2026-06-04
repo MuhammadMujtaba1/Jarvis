@@ -1,45 +1,35 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 
-interface UseVoiceOutput {
-  speak: (text: string) => void
-  isSpeaking: boolean
-  stop: () => void
-}
-
-export const useVoiceOutput = (enabled = true): UseVoiceOutput => {
+export const useVoiceOutput = (enabled: boolean) => {
   const [isSpeaking, setIsSpeaking] = useState(false)
 
-  const speak = (text: string) => {
-    if (!enabled || !('speechSynthesis' in window)) {
-      console.warn('Speech synthesis not available')
-      return
-    }
+  const speak = useCallback(
+    (text: string, rate = 1) => {
+      if (!enabled || !window.speechSynthesis) return
 
-    // Cancel any ongoing speech
-    window.speechSynthesis.cancel()
-
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.rate = 1.0
-    utterance.pitch = 1.0
-    utterance.volume = 1.0
-
-    utterance.onstart = () => setIsSpeaking(true)
-    utterance.onend = () => setIsSpeaking(false)
-    utterance.onerror = () => setIsSpeaking(false)
-
-    window.speechSynthesis.speak(utterance)
-  }
-
-  const stop = () => {
-    window.speechSynthesis.cancel()
-    setIsSpeaking(false)
-  }
-
-  useEffect(() => {
-    return () => {
+      // Cancel any ongoing speech
       window.speechSynthesis.cancel()
+
+      const utterance = new SpeechSynthesisUtterance(text)
+      utterance.rate = rate
+      utterance.pitch = 1
+      utterance.volume = 1
+
+      utterance.onstart = () => setIsSpeaking(true)
+      utterance.onend = () => setIsSpeaking(false)
+      utterance.onerror = () => setIsSpeaking(false)
+
+      window.speechSynthesis.speak(utterance)
+    },
+    [enabled]
+  )
+
+  const stop = useCallback(() => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel()
+      setIsSpeaking(false)
     }
   }, [])
 
-  return { speak, isSpeaking, stop }
+  return { speak, stop, isSpeaking }
 }

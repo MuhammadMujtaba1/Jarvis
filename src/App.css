@@ -1,50 +1,83 @@
-.app {
+.boot-sequence {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  min-height: 100vh;
-  background: linear-gradient(135deg, #0f172a 0%, #020617 100%);
-  color: #f1f5f9;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  height: 100vh;
+  background: linear-gradient(135deg, #0a0e27 0%, #151932 50%, #0a0e27 100%);
+  overflow: hidden;
+  position: relative;
 }
 
-/* Glassmorphism effect */
-.glass {
-  background: rgba(15, 23, 42, 0.7);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(148, 163, 184, 0.2);
+.boot-sequence::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: 
+    linear-gradient(0deg, transparent 24%, rgba(0, 217, 255, 0.05) 25%, rgba(0, 217, 255, 0.05) 26%, transparent 27%, transparent 74%, rgba(0, 217, 255, 0.05) 75%, rgba(0, 217, 255, 0.05) 76%, transparent 77%, transparent),
+    linear-gradient(90deg, transparent 24%, rgba(0, 217, 255, 0.05) 25%, rgba(0, 217, 255, 0.05) 26%, transparent 27%, transparent 74%, rgba(0, 217, 255, 0.05) 75%, rgba(0, 217, 255, 0.05) 76%, transparent 77%, transparent);
+  background-size: 50px 50px;
+  pointer-events: none;
+  z-index: 1;
 }
 
-/* Cyberpunk glow */
-.cyber-glow {
-  box-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
+.boot-text {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  max-width: 600px;
+  padding: 40px;
 }
 
-/* Smooth animations */
-@keyframes slideInDown {
-  from {
-    opacity: 0;
-    transform: translateY(-20px);
+.boot-text h1 {
+  font-size: 36px;
+  margin: 0 0 20px 0;
+  letter-spacing: 2px;
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+.boot-text p {
+  font-size: 14px;
+  color: var(--color-text);
+  margin: 10px 0;
+  font-family: 'Courier New', monospace;
+}
+
+.boot-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(0, 217, 255, 0.1);
+  border: 1px solid var(--color-cyan);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 20px 0;
+  box-shadow: 0 0 15px rgba(0, 217, 255, 0.3);
+}
+
+.boot-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-cyan), var(--color-cyan-light));
+  width: 100%;
+  animation: loading 2s ease-in-out;
+  box-shadow: 0 0 10px rgba(0, 217, 255, 0.6);
+}
+
+@keyframes loading {
+  0% {
+    width: 0%;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+  100% {
+    width: 100%;
   }
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.animate-slide-in-down {
-  animation: slideInDown 0.3s ease-out;
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.3s ease-out;
+.boot-detail {
+  font-size: 11px !important;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.5px;
+  margin-top: 20px !important;
+  animation: flicker 0.15s infinite;
 }

@@ -1,183 +1,110 @@
-import { Task } from '../types'
-
-interface DAGNode {
+interface TaskNode {
   id: string
-  task: Task
-  inProgress: boolean
-  completed: boolean
-  error?: string
-}
-
-interface DAGGraph {
-  nodes: Map<string, DAGNode>
-  edges: Map<string, string[]> // taskId -> [dependent taskIds]
-  inDegree: Map<string, number> // taskId -> number of dependencies
+  title: string
+  dependencies: string[]
+  status: 'pending' | 'executing' | 'completed' | 'failed'
+  [key: string]: any
 }
 
 class DAGProcessor {
-  private graph: DAGGraph = {
-    nodes: new Map(),
-    edges: new Map(),
-    inDegree: new Map()
+  private nodes: Map<string, TaskNode> = new Map()
+  private edges: Map<string, Set<string>> = new Map()
+
+  /**
+   * Build a DAG from task list
+   */
+  buildDAG(tasks: TaskNode[]): void {
+    // Clear previous DAG
+    this.nodes.clear()
+    this.edges.clear()
+
+    // Add nodes
+    tasks.forEach((task) => {
+      this.nodes.set(task.id, { ...task })
+      this.edges.set(task.id, new Set(task.dependencies))
+    })
+
+    console.log(`📊 DAG built with ${this.nodes.size} nodes`)
   }
 
   /**
-   * Build a DAG from task array
+   * Get executable tasks (no pending dependencies)
    */
-  buildDAG(tasks: Task[]): void {
-    this.graph = {
-      nodes: new Map(),
-      edges: new Map(),
-      inDegree: new Map()
-    }
+  getExecutableTasks(): TaskNode[] {
+    const executable: TaskNode[] = []
 
-    // Create nodes
-    tasks.forEach((task) => {
-      this.graph.nodes.set(task.id, {
-        id: task.id,
-        task,
-        inProgress: false,
-        completed: false
-      })
-      this.graph.inDegree.set(task.id, task.dependencies.length)
-      this.graph.edges.set(task.id, [])
-    })
+    this.nodes.forEach((node, nodeId) => {
+      if (node.status !== 'pending') return
 
-    // Create edges (reverse dependencies)
-    tasks.forEach((task) => {
-      task.dependencies.forEach((depId) => {
-        const deps = this.graph.edges.get(depId) || []
-        deps.push(task.id)
-        this.graph.edges.set(depId, deps)
-      })
-    })
-  }
+      const dependencies = this.edges.get(nodeId) || new Set()
+      let allDepsCompleted = true
 
-  /**
-   * Get tasks ready for execution (no pending dependencies)
-   */
-  getReadyTasks(): Task[] {
-    const readyTasks: Task[] = []
+      for (const depId of dependencies) {
+        const depNode = this.nodes.get(depId)
+        if (!depNode || depNode.status !== 'completed') {
+          allDepsCompleted = false
+          break
+        }
+      }
 
-    this.graph.inDegree.forEach((degree, taskId) => {
-      const node = this.graph.nodes.get(taskId)
-      if (degree === 0 && node && !node.completed && !node.inProgress) {
-        readyTasks.push(node.task)
+      if (allDepsCompleted) {
+        executable.push(node)
       }
     })
 
-    return readyTasks
+    return executable
   }
 
   /**
-   * Mark a task as in progress
+   * Mark task as completed
    */
-  markInProgress(taskId: string): void {
-    const node = this.graph.nodes.get(taskId)
-    if (node) {
-      node.inProgress = true
+  completeTask(taskId: string): void {
+    const task = this.nodes.get(taskId)
+    if (task) {
+      task.status = 'completed'
+      console.log(`✅ Task completed: ${task.title}`)
     }
   }
 
   /**
-   * Mark a task as completed
-   */
-  markCompleted(taskId: string, result?: any): void {
-    const node = this.graph.nodes.get(taskId)
-    if (node) {
-      node.completed = true
-      node.inProgress = false
-      node.task.result = result
-      node.task.status = 'completed'
-      node.task.completedAt = Date.now()
-
-      // Reduce in-degree for dependent tasks
-      const dependents = this.graph.edges.get(taskId) || []
-      dependents.forEach((depId) => {
-        const currentDegree = this.graph.inDegree.get(depId) || 0
-        this.graph.inDegree.set(depId, currentDegree - 1)
-      })
-    }
-  }
-
-  /**
-   * Mark a task as failed
-   */
-  markFailed(taskId: string, error: string): void {
-    const node = this.graph.nodes.get(taskId)
-    if (node) {
-      node.error = error
-      node.inProgress = false
-      node.task.error = error
-      node.task.status = 'failed'
-      node.task.completedAt = Date.now()
-    }
-  }
-
-  /**
-   * Check if DAG is complete
-   */
-  isComplete(): boolean {
-    return Array.from(this.graph.nodes.values()).every(
-      (node) => node.completed || node.error
-    )
-  }
-
-  /**
-   * Get execution status
+   * Get DAG status
    */
   getStatus(): {
     total: number
     completed: number
-    inProgress: number
+    executing: number
     pending: number
     failed: number
-    progress: number
   } {
-    const nodes = Array.from(this.graph.nodes.values())
-    const completed = nodes.filter((n) => n.completed).length
-    const inProgress = nodes.filter((n) => n.inProgress).length
-    const failed = nodes.filter((n) => n.error).length
-    const pending = nodes.length - completed - inProgress - failed
+    let completed = 0
+    let executing = 0
+    let pending = 0
+    let failed = 0
+
+    this.nodes.forEach((node) => {
+      switch (node.status) {
+        case 'completed':
+          completed++
+          break
+        case 'executing':
+          executing++
+          break
+        case 'pending':
+          pending++
+          break
+        case 'failed':
+          failed++
+          break
+      }
+    })
 
     return {
-      total: nodes.length,
+      total: this.nodes.size,
       completed,
-      inProgress,
+      executing,
       pending,
-      failed,
-      progress: nodes.length > 0 ? (completed / nodes.length) * 100 : 0
+      failed
     }
-  }
-
-  /**
-   * Get all tasks in execution order
-   */
-  getExecutionOrder(): Task[] {
-    const order: Task[] = []
-    const visited = new Set<string>()
-    const visiting = new Set<string>()
-
-    const visit = (taskId: string) => {
-      if (visited.has(taskId)) return
-      if (visiting.has(taskId)) {
-        console.warn(`⚠️ Circular dependency detected at ${taskId}`)
-        return
-      }
-
-      visiting.add(taskId)
-      const node = this.graph.nodes.get(taskId)
-      if (node) {
-        const task = node.task
-        task.dependencies.forEach((depId) => visit(depId))
-        order.push(task)
-      }
-      visiting.delete(taskId)
-      visited.add(taskId)
-    }
-
-    this.graph.nodes.forEach((_, taskId) => visit(taskId))
-    return order
   }
 }
 
