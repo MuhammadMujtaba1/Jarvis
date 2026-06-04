@@ -1,90 +1,146 @@
-import { Agent, AgentMessage } from '../types'
-import { getGroqClient } from '../utils/groqClient'
-import { getMessageQueue } from '../utils/messageQueue'
-import { v4 as uuidv4 } from 'uuid'
-
 /**
- * Tier 3: BUILDER / CODE GENERATOR AGENT (EVA CODER CORE)
- * Role: Write clean, modular React/TypeScript code
+ * TIER 3: BUILDER AGENT (EVA CODER)
+ * Clean, modular React/TypeScript code generation and component building
  */
-class Builder implements Agent {
-  id = 'builder'
-  name = 'Builder'
-  tier: 1 | 2 | 3 | 4 = 3
-  role = 'Code Generator - React/TypeScript implementation'
-  status: 'idle' | 'processing' | 'waiting' = 'idle'
-  memory = {
-    type: 'episodic' as const,
-    capacity: 300,
-    currentUsage: 0
-  }
-  capabilities = ['code_generation', 'component_creation', 'refactoring']
-  private groqClient = getGroqClient()
-  private messageQueue = getMessageQueue()
 
-  /**
-   * Generate code for a task
-   */
-  async generateCode(taskDescription: string, requirements: string[]): Promise<string> {
-    console.log('💻 Builder generating code for:', taskDescription)
+import { messageQueue } from '../utils/messageQueue';
+import { groqClient } from '../utils/groqClient';
+import { dbStore } from '../utils/indexedDB';
+import { ExecutionTask, BuilderOutput } from '../types';
+import { v4 as uuidv4 } from 'uuid';
 
-    this.status = 'processing'
+export class Builder {
+  private agentId = 'builder-tier3';
+  private generatedComponents: Map<string, BuilderOutput> = new Map();
 
-    try {
-      const systemPrompt = `You are EVA, the Builder agent. Generate clean, production-ready TypeScript code.
-
-Generate ONLY the code without markdown formatting or explanation.
-
-Requirements:
-${requirements.map((r) => `- ${r}`).join('\n')}`
-
-      const code = await this.groqClient.sendMessage(taskDescription, systemPrompt)
-
-      console.log('✅ Code generated successfully')
-      this.status = 'idle'
-
-      return code
-    } catch (error) {
-      console.error('❌ Code generation failed:', error)
-      this.status = 'idle'
-      throw error
-    }
+  constructor() {
+    this.initializeListeners();
   }
 
-  /**
-   * Process task assignment
-   */
-  async processTasks(payload: any): Promise<void> {
-    console.log('📝 Builder processing tasks:', payload.feature)
-
-    try {
-      // Generate code for each task
-      for (const task of payload.tasks) {
-        const code = await this.generateCode(task.title, payload.requirements)
-
-        // Send to Critic for validation
-        const message: AgentMessage = {
-          id: uuidv4(),
-          from: this.name,
-          to: 'critic',
-          type: 'task_assignment',
-          payload: {
-            taskId: task.id,
-            code,
-            description: task.title
-          },
-          timestamp: Date.now(),
-          priority: 'high'
-        }
-
-        await this.messageQueue.enqueue(message)
+  private initializeListeners(): void {
+    messageQueue.subscribe(this.agentId, async (message) => {
+      if (message.type === 'DESIGN_SPECIFICATION') {
+        await this.generateComponent(message.payload as any);
+      } else if (message.type === 'BACKEND_IMPLEMENTATION') {
+        await this.generateBackendCode(message.payload as any);
       }
+    });
+  }
 
-      console.log('✅ All code generated and sent to Critic')
-    } catch (error) {
-      console.error('❌ Task processing failed:', error)
+  /**
+   * Generate React component from design specification
+   */
+  async generateComponent(payload: any): Promise<void> {
+    console.log(`🏗️ Builder: Generating component: ${payload.componentType}`);
+
+    const componentCode = await groqClient.chat([
+      {
+        role: 'system',
+        content: `You are an expert React/TypeScript developer (EVA Coder). Generate clean, type-safe React components.
+Use functional components with hooks. Include proper TypeScript types.
+Provide complete, production-ready code.`,
+      },
+      {
+        role: 'user',
+        content: `Generate a React component for: ${payload.componentType}\n\nSpecification:\n${payload.specification}`,
+      },
+    ]);
+
+    // Extract code from markdown if present
+    const codeMatch = componentCode.match(/```(?:tsx|typescript)?\s*([\s\S]*?)\s*```/);
+    const cleanCode = codeMatch ? codeMatch[1] : componentCode;
+
+    // Store generated component
+    const output: BuilderOutput = {
+      code: cleanCode,
+      language: 'typescript',
+      component: payload.componentType,
+      description: payload.specification,
+      testCases: [],
+    };
+
+    this.generatedComponents.set(payload.taskId, output);
+
+    // Create execution task
+    const task: ExecutionTask = {
+      id: uuidv4(),
+      title: `Build: ${payload.componentType}`,
+      description: `Generated React component code`,
+      priority: 'HIGH',
+      status: 'IN_PROGRESS',
+      assignedAgent: this.agentId,
+      dependencies: [],
+      createdAt: Date.now(),
+      result: cleanCode,
+    };
+
+    await dbStore.addExecutionTask(task);
+
+    // Dispatch to Critic for review
+    await messageQueue.sendMessage(
+      this.agentId,
+      'critic',
+      'CODE_REVIEW',
+      {
+        taskId: task.id,
+        code: cleanCode,
+        language: 'typescript',
+      },
+      'HIGH'
+    );
+
+    console.log(`✅ Component generated: ${payload.componentType}`);
+  }
+
+  /**
+   * Generate backend code from engineering specification
+   */
+  async generateBackendCode(payload: any): Promise<void> {
+    console.log(`🔧 Builder: Generating backend for: ${payload.featureName}`);
+
+    const backendCode = await groqClient.chat([
+      {
+        role: 'system',
+        content: `You are a senior backend architect. Generate production-ready backend code.
+Include API endpoints, database models, and implementation logic.
+Use TypeScript/Node.js patterns.`,
+      },
+      {
+        role: 'user',
+        content: `Generate backend implementation for: ${payload.featureName}\n\nSpecification:\n${payload.specification}`,
+      },
+    ]);
+
+    const task: ExecutionTask = {
+      id: uuidv4(),
+      title: `Backend: ${payload.featureName}`,
+      description: `Backend implementation for feature cluster`,
+      priority: 'HIGH',
+      status: 'COMPLETED',
+      assignedAgent: this.agentId,
+      dependencies: [],
+      createdAt: Date.now(),
+      result: backendCode,
+    };
+
+    await dbStore.addExecutionTask(task);
+
+    // Update state with implementation ready flag
+    const state = await dbStore.getSystemState();
+    if (state) {
+      await dbStore.updateSystemState(state);
     }
+
+    console.log(`✅ Backend implementation ready for review: ${payload.featureName}`);
+    console.log(`📌 Task ID: ${task.id}`);
+  }
+
+  /**
+   * Get generated components
+   */
+  getGeneratedComponents(): BuilderOutput[] {
+    return Array.from(this.generatedComponents.values());
   }
 }
 
-export default Builder
+export const builder = new Builder();

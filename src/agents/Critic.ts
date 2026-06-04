@@ -1,103 +1,118 @@
-import { Agent } from '../types'
-
 /**
- * Tier 4: CRITIC / QA TESTER AGENT
- * Role: Validate code, flag errors, loop back failures
+ * TIER 4: CRITIC AGENT
+ * Quality assurance, code validation, recursive error routing
  */
-class Critic implements Agent {
-  id = 'critic'
-  name = 'Critic'
-  tier: 1 | 2 | 3 | 4 = 4
-  role = 'QA Tester - Code validation and error detection'
-  status: 'idle' | 'processing' | 'waiting' = 'idle'
-  memory = {
-    type: 'semantic' as const,
-    capacity: 400,
-    currentUsage: 0
+
+import { messageQueue } from '../utils/messageQueue';
+import { groqClient } from '../utils/groqClient';
+import { dbStore } from '../utils/indexedDB';
+import { ExecutionTask, CriticReview } from '../types';
+import { v4 as uuidv4 } from 'uuid';
+
+export class Critic {
+  private agentId = 'critic-tier4';
+  private reviews: Map<string, CriticReview> = new Map();
+
+  constructor() {
+    this.initializeListeners();
   }
-  capabilities = ['code_validation', 'error_detection', 'testing']
+
+  private initializeListeners(): void {
+    messageQueue.subscribe(this.agentId, async (message) => {
+      if (message.type === 'CODE_REVIEW') {
+        await this.reviewCode(message.payload as any);
+      }
+    });
+  }
 
   /**
-   * Validate generated code
+   * Review code for quality and correctness
    */
-  validateCode(code: string): { valid: boolean; errors: string[] } {
-    console.log('🔍 Critic validating code...')
+  async reviewCode(payload: any): Promise<void> {
+    console.log(`🔎 Critic: Reviewing code...`);
 
-    const errors: string[] = []
+    const review = await groqClient.chat([
+      {
+        role: 'system',
+        content: `You are a senior code reviewer. Analyze code for:
+- TypeScript best practices
+- Performance optimization
+- Security concerns
+- Testing coverage
+Provide specific feedback and suggested fixes.`,
+      },
+      {
+        role: 'user',
+        content: `Review this ${payload.language} code:\n\n${payload.code}`,
+      },
+    ]);
 
-    // Basic validation checks
-    if (!code || code.length === 0) {
-      errors.push('Code is empty')
-    }
+    // Determine if approved
+    const approved =
+      !review.toLowerCase().includes('critical') &&
+      !review.toLowerCase().includes('error') &&
+      !review.toLowerCase().includes('security');
 
-    // Check for TypeScript syntax
-    if (!code.includes('interface') && !code.includes('type') && !code.includes('class')) {
-      errors.push('Missing type definitions')
-    }
+    const criticReview: CriticReview = {
+      taskId: payload.taskId,
+      approved,
+      feedback: review,
+      timestamp: Date.now(),
+    };
 
-    // Check for async/await proper usage
-    if (code.includes('async') && !code.includes('await')) {
-      errors.push('Async function without await usage')
-    }
+    this.reviews.set(payload.taskId, criticReview);
 
-    if (errors.length === 0) {
-      console.log('✅ Code validation passed')
-      return { valid: true, errors: [] }
+    // Create execution task
+    const task: ExecutionTask = {
+      id: uuidv4(),
+      title: 'Code Review',
+      description: 'Quality assurance and validation',
+      priority: 'HIGH',
+      status: approved ? 'COMPLETED' : 'IN_PROGRESS',
+      assignedAgent: this.agentId,
+      dependencies: [],
+      createdAt: Date.now(),
+      result: review,
+    };
+
+    await dbStore.addExecutionTask(task);
+
+    if (approved) {
+      console.log(`✅ Code approved by Critic`);
+      // Notify upstream that code is ready
+      await messageQueue.sendMessage(
+        this.agentId,
+        'orchestrator-tier1',
+        'TASK_COMPLETED',
+        {
+          taskId: payload.taskId,
+          approved: true,
+          feedback: review,
+        },
+        'HIGH'
+      );
     } else {
-      console.error('❌ Validation errors found:', errors)
-      return { valid: false, errors }
+      console.log(`⚠️ Code review flagged issues - routing back to Builder`);
+      // Route back to Builder for fixes
+      await messageQueue.sendMessage(
+        this.agentId,
+        'builder',
+        'REVISION_REQUIRED',
+        {
+          taskId: payload.taskId,
+          feedback: review,
+        },
+        'HIGH'
+      );
     }
   }
 
   /**
-   * Run tests on code
+   * Get all reviews
    */
-  runTests(code: string): { passed: number; failed: number; results: string[] } {
-    console.log('🧪 Critic running tests...')
-
-    // Mock test execution
-    const results = [
-      '✓ TypeScript compilation successful',
-      '✓ No linting errors detected',
-      '✓ All type checks passed',
-      '✓ Error handling implemented correctly',
-      '✓ Code follows best practices'
-    ]
-
-    return {
-      passed: 5,
-      failed: 0,
-      results
-    }
-  }
-
-  /**
-   * Generate validation report
-   */
-  generateReport(code: string): { status: 'approved' | 'rejected'; report: string } {
-    const validation = this.validateCode(code)
-    const tests = this.runTests(code)
-
-    const status = validation.valid && tests.failed === 0 ? 'approved' : 'rejected'
-
-    const report = `
-=== CODE REVIEW REPORT ===
-Status: ${status.toUpperCase()}
-Validation Errors: ${validation.errors.length}
-Tests Passed: ${tests.passed}
-Tests Failed: ${tests.failed}
-
-Details:
-${validation.errors.length > 0 ? 'Validation Issues:\n' + validation.errors.map((e) => `  - ${e}`).join('\n') : 'No validation issues'}
-
-Test Results:
-${tests.results.map((r) => `  ${r}`).join('\n')}
-`
-
-    console.log(report)
-
-    return { status, report }
+  getReviews(): CriticReview[] {
+    return Array.from(this.reviews.values());
   }
 }
 
-export default Critic
+export const critic = new Critic();

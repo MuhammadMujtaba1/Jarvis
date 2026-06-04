@@ -1,328 +1,298 @@
-import { Goal, Task, Agent, AgentMessage } from '../types'
-import { getGroqClient, initializeGroqClient } from '../utils/groqClient'
-import { getDatabase, initializeDatabase } from '../utils/indexedDB'
-import { getMessageQueue } from '../utils/messageQueue'
-import DAGProcessor from '../utils/dagProcessor'
-import { BusinessMetrics, OrchestratorState, generateMockMetrics } from './orchestratorMetrics'
-import { v4 as uuidv4 } from 'uuid'
-
 /**
- * Tier 1: ORCHESTRATOR / CHIEF EXECUTIVE AGENT
- * Role: Director - Goal parsing, DAG creation, agent coordination
+ * TIER 1: ORCHESTRATOR AGENT (THE DIRECTOR)
+ * Conversational partner, goal parsing, execution graph creation
+ * Manages all downstream agents and orchestrates the business agency
  */
-class Orchestrator {
-  private state: OrchestratorState
-  private dagProcessor: DAGProcessor
-  private agentRegistry: Map<string, Agent> = new Map()
-  private groqClient: any
-  private db: any
-  private messageQueue: any
+
+import { groqClient } from '../utils/groqClient';
+import { dbStore } from '../utils/indexedDB';
+import { messageQueue } from '../utils/messageQueue';
+import { DAGProcessor } from '../utils/dagProcessor';
+import {
+  ExecutionDAG,
+  OrchestratorRequest,
+  BusinessAgencyState,
+  ShortFormVideoMetrics,
+  AdCampaignMetrics,
+  CustomerEmailMetrics,
+  FeatureCluster,
+} from '../types';
+import { v4 as uuidv4 } from 'uuid';
+
+export class Orchestrator {
+  private agentId = 'orchestrator-tier1';
+  private conversationHistory: Array<{ role: string; content: string }> = [];
 
   constructor() {
-    this.state = {
-      isActive: false,
-      currentMetrics: generateMockMetrics(),
-      taskQueue: [],
-      lastUpdate: Date.now(),
-      mode: 'idle'
-    }
-    this.dagProcessor = new DAGProcessor()
+    this.initializeListeners();
   }
 
   /**
-   * Initialize the Orchestrator
+   * Subscribe to incoming messages
    */
-  async initialize(groqApiKey: string): Promise<void> {
-    console.log('🎯 Initializing Orchestrator...')
-
-    try {
-      // Initialize Groq client
-      this.groqClient = initializeGroqClient(groqApiKey)
-
-      // Initialize database
-      this.db = await initializeDatabase('JarvisDB')
-
-      // Initialize message queue
-      this.messageQueue = getMessageQueue()
-
-      // Register agent handlers
-      this.registerAgentHandlers()
-
-      // Load conversation history
-      await this.loadConversationHistory()
-
-      this.state.isActive = true
-      console.log('✅ Orchestrator initialized successfully')
-    } catch (error) {
-      console.error('❌ Orchestrator initialization failed:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Register handlers for agent messages
-   */
-  private registerAgentHandlers(): void {
-    const agents = ['designer', 'engineer', 'builder', 'researcher', 'critic']
-
-    agents.forEach((agent) => {
-      this.messageQueue.registerHandler(agent, async (message: AgentMessage) => {
-        await this.handleAgentResponse(agent, message)
-      })
-    })
-  }
-
-  /**
-   * Parse a user goal into executable tasks
-   */
-  async parseGoal(goalDescription: string): Promise<Goal> {
-    console.log(`📋 Parsing goal: ${goalDescription}`)
-    this.state.mode = 'processing'
-
-    try {
-      const systemPrompt = `You are JARVIS Orchestrator. Parse this user goal into a structured DAG (Directed Acyclic Graph) of tasks.
-
-Respond ONLY with valid JSON:
-{
-  "title": "Goal title",
-  "description": "Detailed description",
-  "tasks": [
-    {
-      "id": "task_1",
-      "title": "Task title",
-      "description": "Task description",
-      "tier": 1-4,
-      "agent": "Agent name (orchestrator, designer, engineer, builder, researcher, critic)",
-      "dependencies": ["task_ids"]
-    }
-  ]
-}`
-
-      const response = await this.groqClient.sendMessage(goalDescription, systemPrompt)
-
-      // Extract JSON from response
-      const jsonMatch = response.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) throw new Error('Invalid JSON in response')
-
-      const parsedGoal = JSON.parse(jsonMatch[0])
-
-      // Create Goal object
-      const goal: Goal = {
-        id: uuidv4(),
-        title: parsedGoal.title,
-        description: parsedGoal.description,
-        createdAt: Date.now(),
-        status: 'planning',
-        taskDAG: parsedGoal.tasks.map((t: any) => ({
-          id: t.id,
-          title: t.title,
-          description: t.description,
-          status: 'pending' as const,
-          dependencies: t.dependencies,
-          priority: 'medium' as const,
-          tier: t.tier,
-          assignedAgent: t.agent,
-          createdAt: Date.now()
-        })),
-        userContext: {
-          habits: {},
-          preferences: {},
-          history: [goalDescription]
-        }
+  private initializeListeners(): void {
+    messageQueue.subscribe(this.agentId, async (message) => {
+      if (message.type === 'USER_REQUEST') {
+        await this.handleUserRequest(message.payload as OrchestratorRequest);
+      } else if (message.type === 'BUSINESS_METRICS_UPDATE') {
+        await this.analyzeMetricsAndRecommend(message.payload as Partial<BusinessAgencyState>);
       }
+    });
+  }
 
-      // Save goal to database
-      await this.db.saveGoal(goal)
+  /**
+   * CORE: Process user goals and create execution DAGs
+   */
+  async handleUserRequest(request: OrchestratorRequest): Promise<void> {
+    console.log('🎯 Orchestrator: Parsing goal:', request.goal);
 
-      // Build and execute DAG
-      this.dagProcessor.buildDAG(goal.taskDAG)
-      goal.status = 'executing'
+    // Create DAG from goal
+    const dag = DAGProcessor.parseGoalIntoDAG(request.goal);
+    DAGProcessor.assignAgentsToDAG(dag);
 
-      this.state.taskQueue = goal.taskDAG
-      this.state.mode = 'idle'
+    // Store in DB
+    const currentState = await dbStore.getSystemState();
+    if (currentState) {
+      currentState.executionDAGs.push(dag);
+      await dbStore.updateSystemState(currentState);
+    }
 
-      return goal
-    } catch (error) {
-      console.error('❌ Goal parsing failed:', error)
-      this.state.mode = 'idle'
-      throw error
+    // Get first batch of executable tasks
+    const executableTasks = DAGProcessor.getExecutableTasks(dag);
+
+    // Dispatch to appropriate managers
+    for (const task of executableTasks) {
+      await this.dispatchTaskToManager(task, dag, request.priority || 'MEDIUM');
+    }
+
+    console.log('✅ DAG created with', dag.nodes.length, 'tasks');
+    console.log(DAGProcessor.visualizeDAG(dag));
+  }
+
+  /**
+   * Dispatch tasks to specialized managers
+   */
+  private async dispatchTaskToManager(
+    task: any,
+    dag: ExecutionDAG,
+    priority: string
+  ): Promise<void> {
+    const manager = task.agentAssigned.includes('design') ? 'design-manager' : 'engineer-manager';
+
+    await messageQueue.sendMessage(
+      this.agentId,
+      manager,
+      'TASK_ASSIGNMENT',
+      {
+        task,
+        dagId: dag.id,
+        goal: dag.goal,
+      },
+      priority as 'HIGH' | 'NORMAL' | 'LOW'
+    );
+  }
+
+  /**
+   * BUSINESS AUTOMATION: Monitor and analyze business metrics
+   */
+  async analyzeMetricsAndRecommend(state: Partial<BusinessAgencyState>): Promise<void> {
+    console.log('📊 Orchestrator: Analyzing business metrics...');
+
+    // 1. SHORT-FORM VIDEO AUTOMATION LOOP
+    if (state.videoMetrics) {
+      await this.analyzeVideoMetrics(state.videoMetrics);
+    }
+
+    // 2. PAID AD OPTIMIZATION MATRIX
+    if (state.adMetrics) {
+      await this.analyzeAdMetrics(state.adMetrics);
+    }
+
+    // 3. CUSTOMER EMAIL AUTO-RESOLUTION ENGINE
+    if (state.emailMetrics) {
+      await this.processCustomerEmails(state.emailMetrics);
     }
   }
 
   /**
-   * Automatically detect feature requests from customer emails
+   * Analyze video performance and auto-generate content
    */
-  async analyzeCustomerEmails(): Promise<void> {
-    console.log('📧 Analyzing customer emails for feature requests...')
+  private async analyzeVideoMetrics(metrics: ShortFormVideoMetrics): Promise<void> {
+    console.log('🎬 Video Metrics Analysis:');
+    console.log(`  Created Daily: ${metrics.videosCreatedDaily}`);
+    console.log(`  Weekly Views: ${metrics.totalWeeklyViews} / ${metrics.targetViews}`);
+    console.log(`  Growth Trend: ${metrics.growthTrend.join(', ')}`);
 
-    const metrics = this.state.currentMetrics
-    const featureRequests = metrics.customerEmails.featureRequests
+    // If below target, dispatch content generation
+    if (metrics.totalWeeklyViews < metrics.targetViews * 0.8) {
+      const contentGoal = `Generate 3 short-form video scripts for social media content to drive engagement`;
+      await messageQueue.sendMessage(
+        this.agentId,
+        'content-worker',
+        'CONTENT_GENERATION',
+        {
+          goal: contentGoal,
+          topic: 'business growth and automation',
+          count: 3,
+        },
+        'HIGH'
+      );
 
-    if (featureRequests.length === 0) {
-      console.log('✅ No new feature requests detected')
-      return
+      console.log('📤 Dispatched: Content generation for underperforming videos');
     }
+  }
 
-    for (const request of featureRequests) {
-      console.log(`🔍 Processing feature request: "${request}"`)
+  /**
+   * Monitor ad spend and ROAS, optimize budgets
+   */
+  private async analyzeAdMetrics(metrics: AdCampaignMetrics): Promise<void> {
+    console.log('💰 Ad Campaign Analysis:');
+    console.log(`  Total Spent: $${metrics.totalSpent}`);
+    console.log(`  ROAS: ${metrics.roas}x`);
 
-      // Use Groq to generate technical requirements
-      const systemPrompt = `You are a technical requirements engineer. Convert this feature request into a structured technical spec.
+    // Identify top and bottom performers
+    const topCreative = metrics.activeCreatives.reduce((a, b) =>
+      a.roi > b.roi ? a : b
+    );
+    const bottomCreative = metrics.activeCreatives.reduce((a, b) =>
+      a.roi < b.roi ? a : b
+    );
 
-Respond ONLY with valid JSON:
-{
-  "feature": "Feature name",
-  "description": "Detailed description",
-  "technicalRequirements": ["Requirement 1", "Requirement 2"],
-  "estimatedDays": number,
-  "priority": "high" | "medium" | "low"
-}`
+    console.log(`  🏆 Top Performer: ${topCreative.name} (ROI: ${topCreative.roi})`);
+    console.log(`  ⚠️ Underperformer: ${bottomCreative.name} (ROI: ${bottomCreative.roi})`);
 
-      try {
-        const spec = await this.groqClient.sendMessage(request, systemPrompt)
-        const jsonMatch = spec.match(/\{[\s\S]*\}/)
+    // Auto-optimize: reallocate budget from worst to best performers
+    await messageQueue.sendMessage(
+      this.agentId,
+      'engineer-manager',
+      'AD_OPTIMIZATION',
+      {
+        topPerformer: topCreative,
+        bottomPerformer: bottomCreative,
+        reallocationPercentage: 20, // Move 20% budget from bottom to top
+      },
+      'NORMAL'
+    );
+  }
 
-        if (jsonMatch) {
-          const requirements = JSON.parse(jsonMatch[0])
-          console.log(`✅ Generated requirements for: ${requirements.feature}`)
+  /**
+   * CUSTOMER RELATIONS MANAGEMENT: Auto-resolve common queries
+   */
+  private async processCustomerEmails(metrics: CustomerEmailMetrics): Promise<void> {
+    console.log('📧 Customer Email Analysis:');
+    console.log(`  Total Weekly: ${metrics.totalWeekly}`);
+    console.log(`  Auto-Resolved: ${metrics.resolvedAutomatically}`);
+    console.log(`  Requires Human: ${metrics.requiresHuman}`);
 
-          // Route to Engineering Manager
-          const message: AgentMessage = {
-            id: uuidv4(),
-            from: 'orchestrator',
-            to: 'engineer',
-            type: 'task_assignment',
-            payload: {
-              feature: requirements.feature,
-              requirements: requirements.technicalRequirements,
-              priority: requirements.priority
-            },
-            timestamp: Date.now(),
-            priority: 'high'
-          }
+    // Detect feature clusters and dispatch to engineering
+    if (metrics.commonFeatureRequests.length > 0) {
+      const topRequest = metrics.commonFeatureRequests[0];
+      if (topRequest.requestCount >= 3) {
+        console.log(
+          `🔧 Feature Cluster Detected: "${topRequest.feature}" (${topRequest.requestCount} requests)`
+        );
 
-          await this.messageQueue.enqueue(message)
-        }
-      } catch (error) {
-        console.error('Error processing feature request:', error)
+        // Dispatch backend engineering task
+        await this.dispatchBackendEngineeringTask(topRequest);
       }
     }
   }
 
   /**
-   * Track content creation metrics
+   * TIER 3 WORKER ACTIVATION: Generate backend spec from feature cluster
    */
-  async trackContentMetrics(): Promise<void> {
-    const metrics = this.state.currentMetrics
-    const content = metrics.contentCreations
+  private async dispatchBackendEngineeringTask(cluster: FeatureCluster): Promise<void> {
+    console.log('⚙️ Dispatching backend engineering task...');
 
-    console.log(`📊 Content Metrics:`)
-    console.log(`  - Videos Created: ${content.shortFormVideos}`)
-    console.log(`  - Total Views: ${content.totalViews}`)
-    console.log(`  - Weekly Target: ${content.weeklyTarget}`)
-    console.log(`  - Progress: ${((content.totalViews / content.weeklyTarget) * 100).toFixed(1)}%`)
+    // Generate technical specification using Groq
+    const spec = await groqClient.generateBackendSpec(cluster.feature);
+
+    // Create execution task
+    const engineeringDAG = DAGProcessor.parseGoalIntoDAG(
+      `Implement backend for: ${cluster.feature}`
+    );
+    DAGProcessor.assignAgentsToDAG(engineeringDAG);
+
+    // Dispatch to builder agent
+    await messageQueue.sendMessage(
+      this.agentId,
+      'builder',
+      'BACKEND_IMPLEMENTATION',
+      {
+        featureName: cluster.feature,
+        specification: spec,
+        affectedUsers: cluster.userIds.length,
+        priority: cluster.priority,
+        dagId: engineeringDAG.id,
+      },
+      'HIGH'
+    );
+
+    console.log(
+      `✅ Backend engineering task dispatched for: ${cluster.feature} (affects ${cluster.userIds.length} users)`
+    );
   }
 
   /**
-   * Track ad performance
+   * Natural language conversation with voice context
    */
-  async trackAdPerformance(): Promise<void> {
-    const metrics = this.state.currentMetrics
-    const ads = metrics.adPerformance
+  async conversationResponse(userMessage: string): Promise<string> {
+    this.conversationHistory.push({
+      role: 'user',
+      content: userMessage,
+    });
 
-    console.log(`💰 Ad Performance Metrics:`)
-    console.log(`  - Spend: $${ads.spentToday}`)
-    console.log(`  - ROAS: ${ads.roasRatio}x`)
-    console.log(`  - Top Performer: ${ads.topPerformer}`)
-    console.log(`  - Weakest: ${ads.worstPerformer}`)
-  }
+    const systemPrompt = `You are JARVIS, an autonomous AI business partner running natively in the browser. 
+You manage multi-tier agent orchestration, business metrics, and automated task execution.
+You have access to real-time metrics about video content, ad campaigns, and customer relations.
+Respond professionally but conversationally. Be concise and action-oriented.`;
 
-  /**
-   * Handle agent responses
-   */
-  private async handleAgentResponse(agentName: string, message: AgentMessage): Promise<void> {
-    console.log(`📨 Message from ${agentName}:`, message.type)
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...this.conversationHistory,
+    ] as Array<{ role: string; content: string }>;
 
-    // Process based on message type
-    switch (message.type) {
-      case 'result':
-        console.log(`✅ Task completed by ${agentName}:`, message.payload)
-        break
-      case 'error':
-        console.error(`❌ Error from ${agentName}:`, message.payload.error)
-        break
-      case 'status_update':
-        console.log(`⏳ Status update from ${agentName}:`, message.payload.status)
-        break
+    const response = await groqClient.chat(messages as any);
+
+    this.conversationHistory.push({
+      role: 'assistant',
+      content: response,
+    });
+
+    // Keep last 10 exchanges in memory
+    if (this.conversationHistory.length > 20) {
+      this.conversationHistory = this.conversationHistory.slice(-20);
     }
+
+    return response;
   }
 
   /**
-   * Load conversation history from database
+   * Get current system state summary
    */
-  private async loadConversationHistory(): Promise<void> {
-    try {
-      const history = await this.db.getConversationHistory()
-      if (history && this.groqClient) {
-        this.groqClient.loadHistory(history)
-        console.log('📜 Conversation history loaded')
-      }
-    } catch (error) {
-      console.warn('Could not load conversation history:', error)
-    }
-  }
+  async getSystemSummary(): Promise<string> {
+    const state = await dbStore.getSystemState();
+    if (!state) return 'No system state available';
 
-  /**
-   * Save conversation history
-   */
-  async saveConversationHistory(): Promise<void> {
-    try {
-      if (this.groqClient) {
-        const history = this.groqClient.getHistory()
-        await this.db.saveConversationHistory(history)
-      }
-    } catch (error) {
-      console.warn('Could not save conversation history:', error)
-    }
-  }
+    const metrics = state.systemMetrics;
+    const videoMetrics = state.videoMetrics;
+    const adMetrics = state.adMetrics;
+    const emailMetrics = state.emailMetrics;
 
-  /**
-   * Get current state
-   */
-  getState(): OrchestratorState {
-    return { ...this.state }
-  }
+    return `
+🎯 JARVIS SYSTEM STATUS
 
-  /**
-   * Get current metrics
-   */
-  getMetrics(): BusinessMetrics {
-    return { ...this.state.currentMetrics }
-  }
+📊 BUSINESS METRICS:
+  Videos: ${videoMetrics.videosCreatedWeekly} created this week (${videoMetrics.totalWeeklyViews} views)
+  Ads: $${adMetrics.totalSpent} spent, ${adMetrics.roas}x ROAS
+  Emails: ${emailMetrics.totalWeekly} weekly, ${emailMetrics.resolvedAutomatically} auto-resolved
 
-  /**
-   * Update metrics
-   */
-  updateMetrics(metrics: Partial<BusinessMetrics>): void {
-    this.state.currentMetrics = { ...this.state.currentMetrics, ...metrics }
-    this.state.lastUpdate = Date.now()
+⚙️ SYSTEM:
+  CPU: ${metrics.cpuUsage}% | RAM: ${metrics.ramUsage}GB / ${metrics.ramTotal}GB | Power: ${metrics.powerLevel}%
+  Storage: ${metrics.storageUsed} used, ${metrics.storageFree} free
+  Network: ↓${metrics.networkDownload}kbps ↑${metrics.networkUpload}kbps
+    `;
   }
 }
 
-// Singleton instance
-let orchestratorInstance: Orchestrator | null = null
-
-export const initializeOrchestrator = async (groqApiKey: string): Promise<Orchestrator> => {
-  orchestratorInstance = new Orchestrator()
-  await orchestratorInstance.initialize(groqApiKey)
-  return orchestratorInstance
-}
-
-export const getOrchestrator = (): Orchestrator => {
-  if (!orchestratorInstance) {
-    throw new Error('Orchestrator not initialized. Call initializeOrchestrator first.')
-  }
-  return orchestratorInstance
-}
-
-export default Orchestrator
+export const orchestrator = new Orchestrator();
