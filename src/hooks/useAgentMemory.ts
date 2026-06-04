@@ -1,73 +1,101 @@
-import { useEffect, useState } from 'react'
-import { MemoryRecord } from '../types'
-import { getDatabase } from '../utils/indexedDB'
+/**
+ * AGENT MEMORY HOOK - Semantic Memory Access
+ * Provides React hook interface for IndexedDB memory operations
+ */
 
-export const useAgentMemory = () => {
-  const [memories, setMemories] = useState<Map<string, MemoryRecord>>(new Map())
-  const [loading, setLoading] = useState(false)
+import { useCallback, useEffect, useState } from 'react';
+import { dbStore } from '../utils/indexedDB';
+import { StoredMemory, BusinessAgencyState } from '../types';
 
-  const db = getDatabase()
-
-  /**
-   * Save a memory record
-   */
-  const saveMemory = async (record: MemoryRecord): Promise<void> => {
-    try {
-      await db.saveMemory(record)
-      setMemories((prev) => new Map(prev).set(record.id, record))
-      console.log(`💾 Memory saved: ${record.id}`)
-    } catch (error) {
-      console.error('Failed to save memory:', error)
-    }
-  }
+export function useAgentMemory() {
+  const [memories, setMemories] = useState<StoredMemory[]>([]);
+  const [systemState, setSystemState] = useState<BusinessAgencyState | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   /**
-   * Query memories by type
+   * Load system state on mount
    */
-  const queryMemories = async (
-    type: MemoryRecord['type'],
-    limit?: number
-  ): Promise<MemoryRecord[]> => {
-    try {
-      setLoading(true)
-      const results = await db.queryMemories(type, limit)
-      return results
-    } catch (error) {
-      console.error('Failed to query memories:', error)
-      return []
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => {
+    const loadState = async () => {
+      try {
+        setIsLoading(true);
+        const state = await dbStore.getSystemState();
+        setSystemState(state || null);
+      } catch (error) {
+        console.error('Failed to load system state:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadState();
+  }, []);
 
   /**
-   * Get user habits
+   * Store a new memory
    */
-  const getUserHabits = async (): Promise<MemoryRecord[]> => {
-    return queryMemories('user_habit')
-  }
+  const addMemory = useCallback(
+    async (memory: Omit<StoredMemory, 'id' | 'lastAccessedAt' | 'createdAt'>): Promise<StoredMemory> => {
+      const newMemory: StoredMemory = {
+        id: `mem-${Date.now()}`,
+        ...memory,
+        createdAt: Date.now(),
+        lastAccessedAt: Date.now(),
+      };
+
+      await dbStore.storeMemory(newMemory);
+      setMemories((prev) => [...prev, newMemory]);
+      return newMemory;
+    },
+    []
+  );
 
   /**
-   * Get project definitions
+   * Search memories
    */
-  const getProjects = async (): Promise<MemoryRecord[]> => {
-    return queryMemories('project_definition')
-  }
+  const searchMemories = useCallback(async (query: string): Promise<StoredMemory[]> => {
+    const results = await dbStore.searchMemories(query);
+    setMemories(results);
+    return results;
+  }, []);
 
   /**
-   * Get execution logs
+   * Get recent memories
    */
-  const getExecutionLogs = async (): Promise<MemoryRecord[]> => {
-    return queryMemories('execution_log')
-  }
+  const getRecentMemories = useCallback(async (limit: number = 10): Promise<StoredMemory[]> => {
+    const results = await dbStore.getRecentMemories(limit);
+    setMemories(results);
+    return results;
+  }, []);
+
+  /**
+   * Update system state
+   */
+  const updateSystemState = useCallback(async (newState: BusinessAgencyState): Promise<void> => {
+    await dbStore.updateSystemState(newState);
+    setSystemState(newState);
+  }, []);
+
+  /**
+   * Get memories by type
+   */
+  const getMemoriesByType = useCallback(
+    async (type: 'HABIT' | 'PREFERENCE' | 'PROJECT' | 'EXECUTION_LOG' | 'CONVERSATION'): Promise<StoredMemory[]> => {
+      const results = await dbStore.getMemoriesByType(type);
+      setMemories(results);
+      return results;
+    },
+    []
+  );
 
   return {
     memories,
-    loading,
-    saveMemory,
-    queryMemories,
-    getUserHabits,
-    getProjects,
-    getExecutionLogs
-  }
+    systemState,
+    isLoading,
+    addMemory,
+    searchMemories,
+    getRecentMemories,
+    updateSystemState,
+    getMemoriesByType,
+  };
 }

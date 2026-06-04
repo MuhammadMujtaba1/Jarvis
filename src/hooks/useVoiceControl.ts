@@ -1,204 +1,276 @@
-import { useState, useEffect, useRef } from 'react'
-import { useVoiceInput } from '../hooks/useVoiceInput'
-import { useVoiceOutput } from '../hooks/useVoiceOutput'
-import { getGroqClient } from '../utils/groqClient'
-import { getDatabase } from '../utils/indexedDB'
-import { Goal, Task } from '../types'
-import '../styles/voiceControl.css'
+/**
+ * VOICE CONTROL HOOK - Web Speech API Integration
+ * Handles voice input recognition, processing, and synthesis responses
+ */
 
-interface EnhancedVoiceControlProps {
-  systemReady: boolean
-  onGoalCreate: (goal: Goal) => void
-  onMetricsUpdate?: (metrics: any) => void
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { orchestrator } from '../agents/Orchestrator';
+import { dbStore } from '../utils/indexedDB';
+import { VoiceMessage, ConversationContext } from '../types';
+import { v4 as uuidv4 } from 'uuid';
+
+interface VoiceControlState {
+  isListening: boolean;
+  isSpeaking: boolean;
+  transcript: string;
+  lastMessage: VoiceMessage | null;
+  error: string | null;
 }
 
-const EnhancedVoiceControl: React.FC<EnhancedVoiceControlProps> = ({
-  systemReady,
-  onGoalCreate,
-  onMetricsUpdate
-}) => {
-  const [isWakeWordActive, setIsWakeWordActive] = useState(false)
-  const [responseText, setResponseText] = useState('')
-  const [isProcessing, setIsProcessing] = useState(false)
-  const { isListening, transcript, startListening, stopListening } = useVoiceInput(systemReady)
-  const { speak, isSpeaking } = useVoiceOutput(true)
-  const wakeWordDetectedRef = useRef(false)
-  const lastTranscriptRef = useRef('')
+const WAKE_WORD = 'hey jarvis';
+const ACTIVATION_PHRASE = "wake up daddy's home";
 
-  const WAKE_WORD_TRIGGERS = [
-    'hey jarvis wake up',
-    'jarvis wake up',
-    'wake up jarvis',
-    'jarvis'
-  ]
+export function useVoiceControl() {
+  const [state, setState] = useState<VoiceControlState>({
+    isListening: false,
+    isSpeaking: false,
+    transcript: '',
+    lastMessage: null,
+    error: null,
+  });
 
-  const db = getDatabase()
+  const recognitionRef = useRef<any>(null);
+  const synthRef = useRef<SpeechSynthesis>(window.speechSynthesis);
+  const conversationRef = useRef<ConversationContext | null>(null);
+  const continuousListeningRef = useRef(false);
 
-  // Continuous listening for wake word
+  /**
+   * Initialize Web Speech API
+   */
   useEffect(() => {
-    if (systemReady && !isWakeWordActive) {
-      startListening()
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setState((prev) => ({
+        ...prev,
+        error: 'Speech Recognition not supported in this browser',
+      }));
+      return;
     }
-  }, [systemReady, isWakeWordActive])
 
-  // Detect wake word in transcript
-  useEffect(() => {
-    if (transcript && transcript !== lastTranscriptRef.current) {
-      lastTranscriptRef.current = transcript
+    recognitionRef.current = new SpeechRecognition();
+    recognitionRef.current.continuous = true;
+    recognitionRef.current.interimResults = true;
+    recognitionRef.current.lang = 'en-US';
 
-      const lowerTranscript = transcript.toLowerCase()
-      const wakeWordDetected = WAKE_WORD_TRIGGERS.some((trigger) =>
-        lowerTranscript.includes(trigger)
-      )
+    recognitionRef.current.onstart = () => {
+      setState((prev) => ({ ...prev, isListening: true, error: null }));
+    };
 
-      if (wakeWordDetected && !isWakeWordActive) {
-        console.log('🎤 Wake word detected!')
-        setIsWakeWordActive(true)
-        wakeWordDetectedRef.current = true
-        stopListening()
+    recognitionRef.current.onresult = async (event: any) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
 
-        // Speak activation confirmation
-        speak('Good evening, sir. Pulling up system status now.')
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
 
-        // Fetch and summarize business metrics
-        setTimeout(() => {
-          summarizeBusinessMetrics()
-        }, 1500)
-      }
-    }
-  }, [transcript])
-
-  /**
-   * Summarize current business metrics from database
-   */
-  const summarizeBusinessMetrics = async () => {
-    try {
-      setIsProcessing(true)
-
-      // Fetch metrics from database
-      const goals = await db.getGoals()
-      const tasks = await db.getTasks()
-
-      // Mock business metrics
-      const metrics = {
-        weeklyDownloads: 2459,
-        weeklyRevenue: 4289,
-        videoViews: 96000,
-        adSpend: 475,
-        roas: 1.5,
-        emailsProcessed: 13,
-        totalEmails: 16,
-        activeGoals: goals.length,
-        completedTasks: tasks.filter((t) => t.status === 'completed').length
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' ';
+        } else {
+          interimTranscript += transcript;
+        }
       }
 
-      // Build natural language summary
-      const summary = `Over the last seven days, we had ${metrics.weeklyDownloads} new downloads and generated $${metrics.weeklyRevenue} in revenue. Our video content reached ${metrics.videoViews} total views. Current ad spend is $${metrics.adSpend} with a ROAS of ${metrics.roas}. We've processed ${metrics.emailsProcessed} out of ${metrics.totalEmails} customer emails automatically. Backend feature requests are being tracked. What would you like me to prioritize first, sir?`
-
-      setResponseText(summary)
-      speak(summary)
-
-      if (onMetricsUpdate) {
-        onMetricsUpdate(metrics)
+      // Check for wake word
+      if (!continuousListeningRef.current) {
+        const lowerTranscript = (finalTranscript || interimTranscript).toLowerCase();
+        if (lowerTranscript.includes(WAKE_WORD) && lowerTranscript.includes(ACTIVATION_PHRASE)) {
+          continuousListeningRef.current = true;
+          await handleWakeUp();
+          return;
+        }
       }
-    } catch (error) {
-      console.error('Error summarizing metrics:', error)
-      const fallback = 'System status retrieved. Please check the dashboard for details.'
-      setResponseText(fallback)
-      speak(fallback)
-    } finally {
-      setIsProcessing(false)
-    }
-  }
+
+      setState((prev) => ({
+        ...prev,
+        transcript: finalTranscript || interimTranscript,
+      }));
+
+      // Process final transcript
+      if (finalTranscript) {
+        await processUserInput(finalTranscript.trim());
+      }
+    };
+
+    recognitionRef.current.onerror = (event: any) => {
+      setState((prev) => ({
+        ...prev,
+        error: `Speech recognition error: ${event.error}`,
+      }));
+    };
+
+    recognitionRef.current.onend = () => {
+      setState((prev) => ({ ...prev, isListening: false }));
+
+      // Restart if continuous listening is enabled
+      if (continuousListeningRef.current) {
+        recognitionRef.current.start();
+      }
+    };
+
+    return () => {
+      recognitionRef.current?.abort();
+    };
+  }, []);
 
   /**
-   * Process voice command after wake word
+   * Handle wake word activation
    */
-  const processVoiceCommand = async (command: string) => {
-    try {
-      setIsProcessing(true)
+  const handleWakeUp = useCallback(async () => {
+    console.log('🎤 JARVIS ACTIVATED: Hey! Ready to help.');
 
-      const groq = getGroqClient()
-      const systemPrompt = `You are JARVIS, an autonomous business operations AI. The user has given you a command. Respond briefly and actionably. If they ask you to handle a task, acknowledge it and explain what you'll do. Keep responses under 100 words.`
+    // Get system state
+    const systemState = await dbStore.getSystemState();
+    if (!systemState) return;
 
-      const response = await groq.sendMessage(command, systemPrompt)
-      setResponseText(response)
-      speak(response)
-    } catch (error) {
-      console.error('Error processing command:', error)
-      const fallback = 'I encountered an error processing that request. Please try again.'
-      setResponseText(fallback)
-      speak(fallback)
-    } finally {
-      setIsProcessing(false)
-    }
-  }
+    // Create or update conversation context
+    const sessionId = uuidv4();
+    conversationRef.current = {
+      sessionId,
+      messages: [],
+      systemState,
+      isActive: true,
+      startedAt: Date.now(),
+      lastActivityAt: Date.now(),
+    };
+
+    // Generate greeting with metrics
+    const summary = await orchestrator.getSystemSummary();
+    const greeting = `Good evening, sir. I'm fully operational. ${summary}`;
+
+    await speakResponse(greeting);
+    await storeMessage('JARVIS', greeting);
+  }, []);
 
   /**
-   * Handle voice command submission
+   * Process user voice input
    */
-  const handleCommandSubmit = async () => {
-    if (!transcript || isProcessing) return
+  const processUserInput = useCallback(
+    async (input: string) => {
+      if (!input.trim() || !continuousListeningRef.current) return;
 
-    stopListening()
-    await processVoiceCommand(transcript)
+      console.log('👤 User:', input);
 
-    // Resume wake word listening after response
-    setTimeout(() => {
-      setIsWakeWordActive(false)
-      lastTranscriptRef.current = ''
-    }, 3000)
-  }
+      // Store user message
+      await storeMessage('USER', input);
 
-  return (
-    <div className="enhanced-voice-control">
-      <div className="voice-status">
-        <div className={`status-indicator ${isWakeWordActive ? 'active' : isListening ? 'listening' : 'idle'}`}>
-          <span className="status-dot"></span>
-          <span className="status-text">
-            {isWakeWordActive ? 'LISTENING FOR COMMANDS' : isListening ? 'WAITING FOR WAKE WORD' : 'STANDBY'}
-          </span>
-        </div>
-      </div>
+      // Get AI response
+      try {
+        const response = await orchestrator.conversationResponse(input);
+        console.log('🤖 JARVIS:', response);
 
-      {isWakeWordActive && (
-        <div className="command-input-area">
-          <div className="transcript-display">
-            {transcript ? <p className="transcript">{transcript}</p> : <p className="placeholder">Say your command...</p>}
-          </div>
+        // Store agent response
+        await storeMessage('JARVIS', response);
 
-          {responseText && (
-            <div className="response-display">
-              <p className="response-label">JARVIS RESPONSE:</p>
-              <p className="response-text">{responseText}</p>
-            </div>
-          )}
+        // Synthesize speech
+        await speakResponse(response);
+      } catch (error) {
+        const errorMsg = `I encountered an error processing your request: ${error}`;
+        await speakResponse(errorMsg);
+      }
+    },
+    []
+  );
 
-          <div className="command-controls">
-            <button
-              className="btn-submit"
-              onClick={handleCommandSubmit}
-              disabled={!transcript || isProcessing}
-            >
-              {isProcessing ? 'PROCESSING...' : 'SUBMIT COMMAND'}
-            </button>
-            <button
-              className="btn-cancel"
-              onClick={() => {
-                stopListening()
-                setIsWakeWordActive(false)
-                setResponseText('')
-              }}
-            >
-              CANCEL
-            </button>
-          </div>
-        </div>
-      )}
+  /**
+   * Speak response using Web Speech API
+   */
+  const speakResponse = useCallback(async (text: string): Promise<void> => {
+    return new Promise((resolve) => {
+      setState((prev) => ({ ...prev, isSpeaking: true }));
 
-      {isSpeaking && <div className="speaking-indicator">🔊 SPEAKING...</div>}
-    </div>
-  )
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.95;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+
+      utterance.onend = () => {
+        setState((prev) => ({ ...prev, isSpeaking: false }));
+        resolve();
+      };
+
+      utterance.onerror = (error) => {
+        console.error('Speech synthesis error:', error);
+        setState((prev) => ({
+          ...prev,
+          isSpeaking: false,
+          error: 'Speech synthesis failed',
+        }));
+        resolve();
+      };
+
+      synthRef.current.speak(utterance);
+    });
+  }, []);
+
+  /**
+   * Store voice message in IndexedDB
+   */
+  const storeMessage = useCallback(async (speaker: string, content: string): Promise<void> => {
+    const message: VoiceMessage = {
+      id: uuidv4(),
+      type: speaker === 'USER' ? 'USER_INPUT' : 'AGENT_RESPONSE',
+      speaker,
+      content,
+      timestamp: Date.now(),
+    };
+
+    if (conversationRef.current) {
+      conversationRef.current.messages.push(message);
+      conversationRef.current.lastActivityAt = Date.now();
+      await dbStore.storeConversation(conversationRef.current);
+    }
+
+    setState((prev) => ({
+      ...prev,
+      lastMessage: message,
+    }));
+  }, []);
+
+  /**
+   * Start listening for voice input
+   */
+  const startListening = useCallback(() => {
+    if (recognitionRef.current && !state.isListening) {
+      recognitionRef.current.start();
+    }
+  }, [state.isListening]);
+
+  /**
+   * Stop listening
+   */
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      continuousListeningRef.current = false;
+    }
+  }, []);
+
+  /**
+   * Toggle continuous listening
+   */
+  const toggleContinuousListening = useCallback(() => {
+    if (continuousListeningRef.current) {
+      stopListening();
+      continuousListeningRef.current = false;
+    } else {
+      startListening();
+      continuousListeningRef.current = true;
+    }
+  }, [startListening, stopListening]);
+
+  /**
+   * Manually send command
+   */
+  const sendCommand = useCallback(async (command: string) => {
+    await processUserInput(command);
+  }, [processUserInput]);
+
+  return {
+    ...state,
+    startListening,
+    stopListening,
+    toggleContinuousListening,
+    sendCommand,
+  };
 }
-
-export default EnhancedVoiceControl

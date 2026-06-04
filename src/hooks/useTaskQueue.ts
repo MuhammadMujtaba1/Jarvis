@@ -1,155 +1,224 @@
-import { useEffect, useState } from 'react'
-import { Task } from '../types'
+/**
+ * TASK QUEUE HOOK - Background Task Management
+ * Manages Web Worker interactions and task execution progress
+ */
 
-interface UseTaskQueueOptions {
-  maxConcurrent?: number
-  autoStart?: boolean
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ExecutionTask, ExecutionDAG } from '../types';
+
+interface TaskQueueState {
+  activeTasks: Map<string, ExecutionTask>;
+  workerReady: boolean;
+  progress: number;
 }
 
-export const useTaskQueue = (options: UseTaskQueueOptions = {}) => {
-  const { maxConcurrent = 3, autoStart = true } = options
+export function useTaskQueue() {
+  const [state, setState] = useState<TaskQueueState>({
+    activeTasks: new Map(),
+    workerReady: false,
+    progress: 0,
+  });
 
-  const [tasks, setTasks] = useState<Map<string, Task>>(new Map())
-  const [activeCount, setActiveCount] = useState(0)
-  const [workerPool, setWorkerPool] = useState<Worker[]>([])
+  const workerRef = useRef<Worker | null>(null);
+  const taskMapRef = useRef<Map<string, ExecutionTask>>(new Map());
 
-  // Initialize worker pool
+  /**
+   * Initialize Web Worker
+   */
   useEffect(() => {
-    const workers: Worker[] = []
+    try {
+      workerRef.current = new Worker(new URL('../workers/taskWorker.ts', import.meta.url), {
+        type: 'module',
+      });
 
-    for (let i = 0; i < maxConcurrent; i++) {
-      try {
-        const worker = new Worker(new URL('../workers/taskWorker.ts', import.meta.url), {
-          type: 'module'
-        })
-        workers.push(worker)
-      } catch (error) {
-        console.warn(`Failed to create worker ${i}:`, error)
-      }
+      workerRef.current.onmessage = (event) => {
+        const { type, data, taskId, error } = event.data;
+
+        switch (type) {
+          case 'DAG_PROGRESS':
+            setState((prev) => ({
+              ...prev,
+              progress: data.progress,
+            }));
+            console.log(`📊 DAG Progress: ${data.progress}% - Completed: ${data.completedTask}`);
+            break;
+
+          case 'DAG_COMPLETE':
+            setState((prev) => ({
+              ...prev,
+              progress: 100,
+            }));
+            console.log('✅ DAG Execution Complete:', data.visualization);
+            break;
+
+          case 'METRICS_ANALYSIS_COMPLETE':
+            console.log('📈 Metrics Analysis:', data.analysis);
+            break;
+
+          case 'VIDEO_ANALYTICS_COMPLETE':
+            console.log('🎬 Video Analytics:', data);
+            break;
+
+          case 'AD_METRICS_COMPLETE':
+            console.log('💰 Ad Metrics:', data);
+            break;
+
+          case 'GROQ_STREAM_CHUNK':
+            console.log(`📝 Streaming chunk for task ${taskId}:`, data.chunk);
+            break;
+
+          case 'GROQ_STREAM_COMPLETE':
+            console.log(`✅ Stream complete for task ${taskId}`);
+            break;
+
+          case 'WORKER_ERROR':
+            console.error('❌ Worker Error:', error);
+            break;
+        }
+      };
+
+      workerRef.current.onerror = (error) => {
+        console.error('Worker initialization error:', error);
+      };
+
+      setState((prev) => ({ ...prev, workerReady: true }));
+    } catch (error) {
+      console.error('Failed to initialize Web Worker:', error);
     }
-
-    setWorkerPool(workers)
 
     return () => {
-      workers.forEach((worker) => worker.terminate())
-    }
-  }, [maxConcurrent])
+      workerRef.current?.terminate();
+    };
+  }, []);
 
   /**
-   * Add a task to the queue
+   * Execute a DAG in the background
    */
-  const enqueueTask = (task: Task): void => {
-    setTasks((prev) => new Map(prev).set(task.id, task))
-  }
-
-  /**
-   * Process queue
-   */
-  const processQueue = async (): Promise<void> => {
-    const taskArray = Array.from(tasks.values())
-    const pendingTasks = taskArray.filter((t) => t.status === 'pending')
-
-    for (const task of pendingTasks) {
-      if (activeCount >= maxConcurrent) break
-
-      // Update task status
-      setTasks((prev) => {
-        const updated = new Map(prev)
-        const t = updated.get(task.id)
-        if (t) {
-          t.status = 'in_progress'
-          t.startedAt = Date.now()
-        }
-        return updated
-      })
-
-      setActiveCount((prev) => prev + 1)
-
-      // Execute task
-      executeTaskInWorker(task).finally(() => {
-        setActiveCount((prev) => Math.max(0, prev - 1))
-      })
-    }
-  }
-
-  /**
-   * Execute task in worker
-   */
-  const executeTaskInWorker = async (task: Task): Promise<void> => {
-    if (workerPool.length === 0) {
-      console.warn('No workers available')
-      return
+  const executeDAG = useCallback((dag: ExecutionDAG, startIndex: number = 0): void => {
+    if (!workerRef.current) {
+      console.error('Worker not ready');
+      return;
     }
 
-    const worker = workerPool[Math.floor(Math.random() * workerPool.length)]
+    setState((prev) => ({ ...prev, progress: 0 }));
 
-    return new Promise((resolve) => {
-      const handleMessage = (event: MessageEvent) => {
-        if (event.data.taskId === task.id) {
-          worker.removeEventListener('message', handleMessage)
-          worker.removeEventListener('error', handleError)
+    workerRef.current.postMessage({
+      type: 'EXECUTE_DAG',
+      payload: {
+        dag,
+        startIndex,
+      },
+    });
+  }, []);
 
-          if (event.data.success) {
-            setTasks((prev) => {
-              const updated = new Map(prev)
-              const t = updated.get(task.id)
-              if (t) {
-                t.status = 'completed'
-                t.result = event.data.result
-                t.completedAt = Date.now()
-              }
-              return updated
-            })
-          }
+  /**
+   * Analyze metrics in background
+   */
+  const analyzeMetrics = useCallback((metricsJson: string): void => {
+    if (!workerRef.current) return;
 
-          resolve()
-        }
+    workerRef.current.postMessage({
+      type: 'ANALYZE_METRICS',
+      payload: { metricsJson },
+    });
+  }, []);
+
+  /**
+   * Stream Groq response with progress
+   */
+  const streamGroqResponse = useCallback(
+    (messages: Array<{ role: string; content: string }>, taskId: string): void => {
+      if (!workerRef.current) return;
+
+      workerRef.current.postMessage({
+        type: 'STREAM_GROQ',
+        payload: { messages, taskId },
+      });
+    },
+    []
+  );
+
+  /**
+   * Process video analytics
+   */
+  const processVideoAnalytics = useCallback(
+    (videos: any[], targetViews: number): void => {
+      if (!workerRef.current) return;
+
+      workerRef.current.postMessage({
+        type: 'PROCESS_VIDEO_ANALYTICS',
+        payload: { videos, targetViews },
+      });
+    },
+    []
+  );
+
+  /**
+   * Process ad metrics
+   */
+  const processAdMetrics = useCallback(
+    (campaigns: any[], totalBudget: number): void => {
+      if (!workerRef.current) return;
+
+      workerRef.current.postMessage({
+        type: 'PROCESS_AD_METRICS',
+        payload: { campaigns, totalBudget },
+      });
+    },
+    []
+  );
+
+  /**
+   * Add task to queue
+   */
+  const addTask = useCallback((task: ExecutionTask): void => {
+    taskMapRef.current.set(task.id, task);
+    setState((prev) => ({
+      ...prev,
+      activeTasks: new Map(taskMapRef.current),
+    }));
+  }, []);
+
+  /**
+   * Get task by ID
+   */
+  const getTask = useCallback((taskId: string): ExecutionTask | undefined => {
+    return taskMapRef.current.get(taskId);
+  }, []);
+
+  /**
+   * Get all active tasks
+   */
+  const getActiveTasks = useCallback((): ExecutionTask[] => {
+    return Array.from(taskMapRef.current.values());
+  }, []);
+
+  /**
+   * Clear completed tasks
+   */
+  const clearCompleted = useCallback((): void => {
+    Array.from(taskMapRef.current.entries()).forEach(([id, task]) => {
+      if (task.status === 'COMPLETED' || task.status === 'FAILED') {
+        taskMapRef.current.delete(id);
       }
+    });
 
-      const handleError = (error: ErrorEvent) => {
-        worker.removeEventListener('message', handleMessage)
-        worker.removeEventListener('error', handleError)
-
-        setTasks((prev) => {
-          const updated = new Map(prev)
-          const t = updated.get(task.id)
-          if (t) {
-            t.status = 'failed'
-            t.error = error.message
-            t.completedAt = Date.now()
-          }
-          return updated
-        })
-
-        console.error(`Task ${task.id} failed:`, error)
-        resolve()
-      }
-
-      worker.addEventListener('message', handleMessage)
-      worker.addEventListener('error', handleError)
-      worker.postMessage({
-        id: task.id,
-        type: 'execute',
-        payload: task
-      })
-    })
-  }
-
-  // Auto-process queue
-  useEffect(() => {
-    if (autoStart) {
-      const interval = setInterval(() => {
-        processQueue()
-      }, 100)
-
-      return () => clearInterval(interval)
-    }
-  }, [autoStart, tasks, activeCount, maxConcurrent])
+    setState((prev) => ({
+      ...prev,
+      activeTasks: new Map(taskMapRef.current),
+    }));
+  }, []);
 
   return {
-    tasks,
-    activeCount,
-    enqueueTask,
-    processQueue
-  }
+    ...state,
+    executeDAG,
+    analyzeMetrics,
+    streamGroqResponse,
+    processVideoAnalytics,
+    processAdMetrics,
+    addTask,
+    getTask,
+    getActiveTasks,
+    clearCompleted,
+  };
 }

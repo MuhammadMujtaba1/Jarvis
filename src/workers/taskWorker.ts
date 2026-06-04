@@ -1,129 +1,207 @@
-// Web Worker for background task execution with enhanced business logic
+/**
+ * WEB WORKER: Background Task Executor
+ * Runs CPU-intensive tasks without blocking the UI thread
+ * Handles DAG execution, metrics analysis, and streaming responses
+ */
 
-interface WorkerTask {
-  id: string
-  type: 'execute' | 'compute' | 'fetch' | 'process_emails' | 'generate_report'
-  payload: any
+import { DAGProcessor } from './dagProcessor';
+import { groqClient } from './groqClient';
+import { ExecutionDAG, ExecutionTask } from '../types';
+
+interface WorkerMessage {
+  type: string;
+  payload: any;
 }
 
-interface WorkerResult {
-  taskId: string
-  success: boolean
-  result?: any
-  error?: string
+interface WorkerResponse {
+  type: string;
+  taskId?: string;
+  data?: any;
+  error?: string;
+  progress?: number;
 }
 
-// Process incoming emails
-const processEmails = async (payload: any): Promise<any> => {
-  const emails = payload.emails || []
-  const processed = []
-
-  for (const email of emails) {
-    if (email.subject.toLowerCase().includes('billing')) {
-      processed.push({
-        ...email,
-        resolved: true,
-        response: 'Your billing inquiry has been forwarded to our accounting team.'
-      })
-    } else if (email.subject.toLowerCase().includes('account')) {
-      processed.push({
-        ...email,
-        resolved: true,
-        response: 'Your account issue has been logged and will be addressed within 24 hours.'
-      })
-    } else {
-      processed.push({
-        ...email,
-        resolved: false,
-        requiresHuman: true
-      })
-    }
-  }
-
-  return { processed, totalProcessed: processed.length }
-}
-
-// Generate business report
-const generateReport = async (payload: any): Promise<any> => {
-  const metrics = payload.metrics
-
-  return {
-    generatedAt: Date.now(),
-    weeklyRevenue: metrics.weeklyRevenue,
-    videoPerformance: {
-      views: metrics.videoViews,
-      target: 100000,
-      achievement: ((metrics.videoViews / 100000) * 100).toFixed(1)
-    },
-    adMetrics: {
-      spend: metrics.adSpend,
-      roas: metrics.roas,
-      roi: `${((metrics.roas - 1) * 100).toFixed(1)}%`
-    },
-    recommendations: [
-      'Continue with street interview creative - highest performer',
-      'Review and optimize slideshow creative',
-      'Implement requested backend synchronization feature',
-      'Scale budget allocation towards top-performing channels'
-    ]
-  }
-}
-
-// Execute task
-const executeTask = async (task: WorkerTask): Promise<any> => {
-  switch (task.type) {
-    case 'compute':
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve({ computed: true, value: Math.random() * 100 })
-        }, 1000)
-      })
-
-    case 'fetch':
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve({ fetched: true, data: 'Mock data' })
-        }, 500)
-      })
-
-    case 'process_emails':
-      return processEmails(task.payload)
-
-    case 'generate_report':
-      return generateReport(task.payload)
-
-    case 'execute':
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve({ executed: true, status: 'success' })
-        }, 800)
-      })
-
-    default:
-      throw new Error(`Unknown task type: ${task.type}`)
-  }
-}
-
-// Listen for messages from main thread
-self.onmessage = async (event: MessageEvent<WorkerTask>) => {
-  const task = event.data
+// Worker message handler
+self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
+  const { type, payload } = event.data;
 
   try {
-    const result = await executeTask(task)
-    const response: WorkerResult = {
-      taskId: task.id,
-      success: true,
-      result
+    switch (type) {
+      case 'EXECUTE_DAG':
+        await executeDAG(payload);
+        break;
+
+      case 'ANALYZE_METRICS':
+        await analyzeMetrics(payload);
+        break;
+
+      case 'STREAM_GROQ':
+        await streamGroqResponse(payload);
+        break;
+
+      case 'PROCESS_VIDEO_ANALYTICS':
+        await processVideoAnalytics(payload);
+        break;
+
+      case 'PROCESS_AD_METRICS':
+        await processAdMetrics(payload);
+        break;
+
+      default:
+        sendError(`Unknown worker task type: ${type}`);
     }
-    self.postMessage(response)
   } catch (error) {
-    const response: WorkerResult = {
-      taskId: task.id,
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
-    }
-    self.postMessage(response)
+    sendError(String(error));
+  }
+};
+
+/**
+ * Execute a DAG in background
+ */
+async function executeDAG(payload: { dag: ExecutionDAG; startIndex?: number }): Promise<void> {
+  const { dag, startIndex = 0 } = payload;
+  const executableTasks = DAGProcessor.getExecutableTasks(dag);
+
+  for (let i = startIndex; i < executableTasks.length; i++) {
+    const task = executableTasks[i];
+    const progress = Math.round(((i + 1) / executableTasks.length) * 100);
+
+    // Simulate task execution (in production, would call actual agent APIs)
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // Mark task as completed
+    DAGProcessor.completeTask(dag, task.id);
+
+    // Send progress update
+    const response: WorkerResponse = {
+      type: 'DAG_PROGRESS',
+      data: {
+        dagId: dag.id,
+        completedTask: task.task,
+        progress,
+      },
+    };
+
+    self.postMessage(response);
+  }
+
+  // Send completion
+  self.postMessage({
+    type: 'DAG_COMPLETE',
+    data: {
+      dagId: dag.id,
+      visualization: DAGProcessor.visualizeDAG(dag),
+    },
+  });
+}
+
+/**
+ * Analyze business metrics in background
+ */
+async function analyzeMetrics(payload: any): Promise<void> {
+  const { metricsJson } = payload;
+
+  try {
+    const analysis = await groqClient.analyzeMetrics(metricsJson);
+
+    self.postMessage({
+      type: 'METRICS_ANALYSIS_COMPLETE',
+      data: {
+        analysis,
+      },
+    });
+  } catch (error) {
+    sendError(`Metrics analysis failed: ${error}`);
   }
 }
 
-export {}
+/**
+ * Stream Groq response with progress updates
+ */
+async function streamGroqResponse(payload: any): Promise<void> {
+  const { messages, taskId } = payload;
+
+  try {
+    await groqClient.stream(messages, 0.7, 2000, (chunk: string) => {
+      self.postMessage({
+        type: 'GROQ_STREAM_CHUNK',
+        taskId,
+        data: {
+          chunk,
+        },
+      });
+    });
+
+    self.postMessage({
+      type: 'GROQ_STREAM_COMPLETE',
+      taskId,
+    });
+  } catch (error) {
+    sendError(`Groq streaming failed: ${error}`);
+  }
+}
+
+/**
+ * Process video analytics in background
+ */
+async function processVideoAnalytics(payload: any): Promise<void> {
+  const { videos, targetViews } = payload;
+
+  // Simulate video analytics processing
+  const analysis = {
+    totalVideos: videos.length,
+    totalViews: videos.reduce((sum: number, v: any) => sum + v.views, 0),
+    targetViews,
+    avgViewsPerVideo: Math.round(
+      videos.reduce((sum: number, v: any) => sum + v.views, 0) / videos.length
+    ),
+    performanceStatus:
+      videos.reduce((sum: number, v: any) => sum + v.views, 0) >= targetViews
+        ? 'ON_TARGET'
+        : 'BELOW_TARGET',
+    topPerformer: videos.reduce((a: any, b: any) => (a.views > b.views ? a : b)),
+  };
+
+  self.postMessage({
+    type: 'VIDEO_ANALYTICS_COMPLETE',
+    data: analysis,
+  });
+}
+
+/**
+ * Process ad campaign metrics in background
+ */
+async function processAdMetrics(payload: any): Promise<void> {
+  const { campaigns, totalBudget } = payload;
+
+  // Simulate ad metrics processing
+  const analysis = {
+    totalCampaigns: campaigns.length,
+    totalSpent: campaigns.reduce((sum: number, c: any) => sum + c.spent, 0),
+    avgROAS: (campaigns.reduce((sum: number, c: any) => sum + c.roi, 0) / campaigns.length).toFixed(2),
+    bestPerformer: campaigns.reduce((a: any, b: any) => (a.roi > b.roi ? a : b)),
+    worstPerformer: campaigns.reduce((a: any, b: any) => (a.roi < b.roi ? a : b)),
+    budgetUtilization: (
+      (campaigns.reduce((sum: number, c: any) => sum + c.spent, 0) / totalBudget) *
+      100
+    ).toFixed(1),
+  };
+
+  self.postMessage({
+    type: 'AD_METRICS_COMPLETE',
+    data: analysis,
+  });
+}
+
+/**
+ * Send error message to main thread
+ */
+function sendError(error: string): void {
+  self.postMessage({
+    type: 'WORKER_ERROR',
+    error,
+  });
+}
+
+// Export for TypeScript
+export {};
