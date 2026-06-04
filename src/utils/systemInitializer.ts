@@ -1,10 +1,26 @@
-import { Agent, JarvisConfig } from '../types'
+import { Agent } from '../types'
 
-const defaultConfig: JarvisConfig = {
-  groqApiKey: import.meta.env.VITE_GROQ_API_KEY || '',
-  groqModel: import.meta.env.VITE_GROQ_MODEL || 'mixtral-8x7b-32768',
-  voiceEnabled: import.meta.env.VITE_VOICE_ENABLED !== 'false',
-  voiceLanguage: import.meta.env.VITE_VOICE_LANG || 'en-US',
+// Extended JarvisConfig interface
+interface JarvisConfigExt {
+  groqApiKey: string
+  groqModel: string
+  voiceEnabled: boolean
+  voiceLanguage: string
+  maxConcurrentTasks: number
+  dbName: string
+  enableOfflineMode: boolean
+}
+
+// Safe import.meta.env access
+const getEnv = (key: string, fallback: string = ''): string => {
+  return (import.meta as any).env?.[key] || fallback;
+};
+
+const defaultConfig: JarvisConfigExt = {
+  groqApiKey: getEnv('VITE_GROQ_API_KEY', ''),
+  groqModel: getEnv('VITE_GROQ_MODEL', 'mixtral-8x7b-32768'),
+  voiceEnabled: getEnv('VITE_VOICE_ENABLED', 'true') !== 'false',
+  voiceLanguage: getEnv('VITE_VOICE_LANG', 'en-US'),
   maxConcurrentTasks: 5,
   dbName: 'JarvisDB',
   enableOfflineMode: true

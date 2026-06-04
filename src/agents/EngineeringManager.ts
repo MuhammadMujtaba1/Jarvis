@@ -1,5 +1,5 @@
 import { Agent, AgentMessage } from '../types'
-import { getMessageQueue } from '../utils/messageQueue'
+import { messageQueue } from '../utils/messageQueue'
 import { v4 as uuidv4 } from 'uuid'
 
 /**
@@ -18,7 +18,6 @@ class EngineeringManager implements Agent {
     currentUsage: 0
   }
   capabilities = ['workflow_translation', 'dependency_tracking', 'architecture']
-  private messageQueue = getMessageQueue()
 
   /**
    * Process incoming feature request
@@ -30,7 +29,7 @@ class EngineeringManager implements Agent {
 
     try {
       // Create task breakdown
-      const tasks = this.breakdownFeature(payload)
+      const tasks = this.breakdownFeature()
 
       // Route to Builder agent
       const message: AgentMessage = {
@@ -47,7 +46,7 @@ class EngineeringManager implements Agent {
         priority: payload.priority || 'medium'
       }
 
-      await this.messageQueue.enqueue(message)
+      await messageQueue.sendMessage(this.name, 'builder', 'TASK_ASSIGNMENT', { message })
       console.log('✅ Feature routed to Builder agent')
 
       this.status = 'idle'
@@ -60,7 +59,7 @@ class EngineeringManager implements Agent {
   /**
    * Break down a feature into implementable tasks
    */
-  private breakdownFeature(payload: any): any[] {
+  private breakdownFeature(): any[] {
     return [
       {
         id: 'backend-setup',

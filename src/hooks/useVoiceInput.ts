@@ -1,14 +1,18 @@
 import React, { useState, useCallback } from 'react'
 
-interface SpeechRecognitionEvent extends Event {
-  results: {
-    [key: number]: {
-      [key: number]: {
-        transcript: string
-      }
-      isFinal: boolean
+interface SpeechRecognitionResultList {
+  length: number
+  [index: number]: {
+    [index: number]: {
+      transcript: string
     }
+    isFinal: boolean
   }
+}
+
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList
+  resultIndex: number
 }
 
 interface SpeechRecognition {
@@ -57,12 +61,14 @@ export const useVoiceInput = (enabled: boolean) => {
       let interimTranscript = ''
       let finalTranscript = ''
 
-      for (let i = event.results.length - 1; i >= 0; i--) {
-        const transcript = event.results[i][0].transcript
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript + ' '
+      const resultsLength = event.results.length
+      for (let i = 0; i < resultsLength; i++) {
+        const result = event.results[i]
+        const transcriptText = result[0]?.transcript || ''
+        if (result.isFinal) {
+          finalTranscript += transcriptText + ' '
         } else {
-          interimTranscript += transcript
+          interimTranscript += transcriptText
         }
       }
 

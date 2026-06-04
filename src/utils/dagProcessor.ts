@@ -84,7 +84,7 @@ export class DAGProcessor {
     }
 
     // Create DAG nodes
-    selectedTasks.forEach((task, index) => {
+    selectedTasks.forEach((task) => {
       const nodeId = uuidv4();
       nodes.push({
         id: nodeId,
@@ -151,7 +151,7 @@ export class DAGProcessor {
   /**
    * Mark a task as completed and return next executable tasks
    */
-  static completeTask(dag: ExecutionDAG, taskId: string, result?: string): DAGNode[] {
+  static completeTask(dag: ExecutionDAG, taskId: string): DAGNode[] {
     const node = dag.nodes.find((n) => n.id === taskId);
     if (!node) return [];
 

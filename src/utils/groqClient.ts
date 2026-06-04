@@ -25,13 +25,18 @@ interface GroqResponse {
   };
 }
 
+// Safe import.meta.env access
+const getEnv = (key: string, fallback: string = ''): string => {
+  return (import.meta as any).env?.[key] || fallback;
+};
+
 export class GroqClient {
   private apiKey: string;
   private baseUrl = 'https://api.groq.com/openai/v1';
   private model = 'mixtral-8x7b-32768';
 
   constructor() {
-    this.apiKey = import.meta.env.VITE_GROQ_API_KEY || '';
+    this.apiKey = getEnv('VITE_GROQ_API_KEY', '');
     if (!this.apiKey) {
       console.warn('⚠️ GROQ_API_KEY not configured in environment');
     }

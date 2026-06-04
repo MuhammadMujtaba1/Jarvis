@@ -1,4 +1,8 @@
+/// <reference lib="webworker" />
+
 // Service Worker for background sync and offline support
+
+declare const self: ServiceWorkerGlobalScope;
 
 const CACHE_NAME = 'jarvis-v1'
 const urlsToCache = [

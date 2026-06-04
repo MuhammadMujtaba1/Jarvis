@@ -1,4 +1,4 @@
-import Orchestrator from '../agents/Orchestrator'
+import { Orchestrator } from '../agents/Orchestrator'
 import './AgentMonitor.css'
 
 interface AgentMonitorProps {

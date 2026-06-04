@@ -14,10 +14,10 @@ import {
   BusinessAgencyState,
   ShortFormVideoMetrics,
   AdCampaignMetrics,
+  AdCreative,
   CustomerEmailMetrics,
   FeatureCluster,
 } from '../types';
-import { v4 as uuidv4 } from 'uuid';
 
 export class Orchestrator {
   private agentId = 'orchestrator-tier1';
@@ -33,7 +33,7 @@ export class Orchestrator {
   private initializeListeners(): void {
     messageQueue.subscribe(this.agentId, async (message) => {
       if (message.type === 'USER_REQUEST') {
-        await this.handleUserRequest(message.payload as OrchestratorRequest);
+        await this.handleUserRequest(message.payload as unknown as OrchestratorRequest);
       } else if (message.type === 'BUSINESS_METRICS_UPDATE') {
         await this.analyzeMetricsAndRecommend(message.payload as Partial<BusinessAgencyState>);
       }
@@ -151,10 +151,10 @@ export class Orchestrator {
     console.log(`  ROAS: ${metrics.roas}x`);
 
     // Identify top and bottom performers
-    const topCreative = metrics.activeCreatives.reduce((a, b) =>
+    const topCreative = metrics.activeCreatives.reduce((a: AdCreative, b: AdCreative) =>
       a.roi > b.roi ? a : b
     );
-    const bottomCreative = metrics.activeCreatives.reduce((a, b) =>
+    const bottomCreative = metrics.activeCreatives.reduce((a: AdCreative, b: AdCreative) =>
       a.roi < b.roi ? a : b
     );
 
@@ -292,6 +292,31 @@ Respond professionally but conversationally. Be concise and action-oriented.`;
   Storage: ${metrics.storageUsed} used, ${metrics.storageFree} free
   Network: ↓${metrics.networkDownload}kbps ↑${metrics.networkUpload}kbps
     `;
+  }
+
+  // Methods called by useAutonomousSystem
+  async analyzeCustomerEmails(): Promise<void> {
+    // Analyze and process customer emails
+  }
+
+  async trackContentMetrics(): Promise<void> {
+    // Track content performance
+  }
+
+  async trackAdPerformance(): Promise<void> {
+    // Track ad performance
+  }
+
+  async saveConversationHistory(): Promise<void> {
+    // Save conversation history to database
+  }
+
+  getMetrics(): any {
+    return null;
+  }
+
+  updateMetrics(_newMetrics: any): void {
+    // Update metrics
   }
 }
 

@@ -5,7 +5,7 @@ interface SystemMonitorProps {
   selectedAgent: Agent | null
 }
 
-const SystemMonitor: React.FC<SystemMonitorProps> = ({ selectedAgent }) => {
+const SystemMonitor: React.FC<SystemMonitorProps> = (_props) => {
   return (
     <div className="system-monitor panel">
       <div className="monitor-header">SYSTEM</div>

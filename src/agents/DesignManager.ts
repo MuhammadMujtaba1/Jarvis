@@ -6,7 +6,7 @@
 import { messageQueue } from '../utils/messageQueue';
 import { groqClient } from '../utils/groqClient';
 import { dbStore } from '../utils/indexedDB';
-import { ExecutionTask, ManagerDecision } from '../types';
+import { ExecutionTask } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
 export class DesignManager {

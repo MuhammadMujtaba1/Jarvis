@@ -7,7 +7,7 @@ interface VoiceControlProps {
   onGoalCreate: (goal: Goal) => void
 }
 
-const VoiceControl: React.FC<VoiceControlProps> = ({ systemReady, onGoalCreate }) => {
+const VoiceControl: React.FC<VoiceControlProps> = ({ systemReady }) => {
   const [isListening, setIsListening] = useState(false)
 
   const handleVoiceClick = async () => {

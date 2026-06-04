@@ -17,6 +17,15 @@ interface VoiceControlState {
   error: string | null;
 }
 
+interface ConversationContextLocal {
+  sessionId: string
+  messages: VoiceMessage[]
+  isActive: boolean
+  startedAt: number
+  lastActivityAt: number
+  language: string
+}
+
 const WAKE_WORD = 'hey jarvis';
 const ACTIVATION_PHRASE = "wake up daddy's home";
 
@@ -31,7 +40,7 @@ export function useVoiceControl() {
 
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis>(window.speechSynthesis);
-  const conversationRef = useRef<ConversationContext | null>(null);
+  const conversationRef = useRef<ConversationContextLocal | null>(null);
   const continuousListeningRef = useRef(false);
 
   /**
@@ -128,10 +137,10 @@ export function useVoiceControl() {
     conversationRef.current = {
       sessionId,
       messages: [],
-      systemState,
       isActive: true,
       startedAt: Date.now(),
       lastActivityAt: Date.now(),
+      language: 'en-US',
     };
 
     // Generate greeting with metrics
@@ -209,16 +218,17 @@ export function useVoiceControl() {
   const storeMessage = useCallback(async (speaker: string, content: string): Promise<void> => {
     const message: VoiceMessage = {
       id: uuidv4(),
-      type: speaker === 'USER' ? 'USER_INPUT' : 'AGENT_RESPONSE',
-      speaker,
-      content,
+      sessionId: conversationRef.current?.sessionId || '',
+      text: content,
       timestamp: Date.now(),
+      isUser: speaker === 'USER',
+      confidence: 1.0,
     };
 
     if (conversationRef.current) {
       conversationRef.current.messages.push(message);
       conversationRef.current.lastActivityAt = Date.now();
-      await dbStore.storeConversation(conversationRef.current);
+      await dbStore.storeConversation(conversationRef.current as unknown as ConversationContext);
     }
 
     setState((prev) => ({

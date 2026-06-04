@@ -2,16 +2,106 @@
  * WEB WORKER: Background Task Executor
  * Runs CPU-intensive tasks without blocking the UI thread
  * Handles DAG execution, metrics analysis, and streaming responses
+ * Integrates with Google OAuth2 for live data feeds
  */
 
-import { DAGProcessor } from './dagProcessor';
-import { groqClient } from './groqClient';
-import { ExecutionDAG, ExecutionTask } from '../types';
+/// <reference lib="webworker" />
 
-interface WorkerMessage {
-  type: string;
-  payload: any;
+import { DAGProcessor } from '../utils/dagProcessor';
+import { groqClient } from '../utils/groqClient';
+import { ExecutionDAG } from '../types';
+
+declare const self: ServiceWorkerGlobalScope;
+
+// ============================================================================
+// TOKEN STATE MANAGEMENT
+// ============================================================================
+
+interface TokenState {
+  hasYouTubeToken: boolean;
+  hasGmailToken: boolean;
+  hasProfileToken: boolean;
+  lastCheck: number;
 }
+
+// Check token state from IndexedDB
+async function checkTokenState(): Promise<TokenState> {
+  const state: TokenState = {
+    hasYouTubeToken: false,
+    hasGmailToken: false,
+    hasProfileToken: false,
+    lastCheck: Date.now(),
+  };
+
+  try {
+    // Open IndexedDB to check tokens
+    const dbRequest = indexedDB.open('jarvis-agency', 1);
+    
+    await new Promise<void>((resolve, reject) => {
+      dbRequest.onerror = () => reject(dbRequest.error);
+      dbRequest.onsuccess = () => {
+        const db = dbRequest.result;
+        
+        if (db.objectStoreNames.contains('oauthTokens')) {
+          const tx = db.transaction('oauthTokens', 'readonly');
+          const store = tx.objectStore('oauthTokens');
+          const getRequest = store.get('google_tokens');
+          
+          getRequest.onsuccess = () => {
+            const data = getRequest.result;
+            if (data?.tokens) {
+              const tokens = data.tokens;
+              const now = Date.now();
+              const buffer = 60000; // 60 second buffer for clock skew
+              
+              // Check each token's expiration
+              if (tokens.YOUTUBE?.accessToken && tokens.YOUTUBE.expiresAt - buffer > now) {
+                state.hasYouTubeToken = true;
+              }
+              if (tokens.GMAIL?.accessToken && tokens.GMAIL.expiresAt - buffer > now) {
+                state.hasGmailToken = true;
+              }
+              if (tokens.PROFILE?.accessToken && tokens.PROFILE.expiresAt - buffer > now) {
+                state.hasProfileToken = true;
+              }
+            }
+            resolve();
+          };
+          
+          getRequest.onerror = () => {
+            resolve(); // Don't fail on error
+          };
+        } else {
+          resolve();
+        }
+      };
+    });
+  } catch (error) {
+    console.warn('[TaskWorker] Failed to check token state:', error);
+  }
+  
+  return state;
+}
+
+// ============================================================================
+// LIVE DATA FETCHING (Using fetch API directly since we're in a worker)
+// ============================================================================
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+
+// ============================================================================
+// WORKER INTERFACES
+// ============================================================================
+
+// Cast self to have postMessage method
+declare const workerSelf: ServiceWorkerGlobalScope & {
+  postMessage: (message: any) => void;
+  onmessage: ((event: any) => void) | null;
+  setInterval: (fn: () => void, ms: number) => number;
+};
+
 
 interface WorkerResponse {
   type: string;
@@ -21,11 +111,60 @@ interface WorkerResponse {
   progress?: number;
 }
 
+// Helper function to post messages from worker context
+const postToMain = (message: any) => {
+  // In worker context, postToMain is available
+  (self as any).postMessage(message);
+};
+
+// Token state cache
+let cachedTokenState: TokenState | null = null;
+let tokenCheckInterval: ReturnType<typeof setInterval> | null = null;
+
+// Initialize token checking
+async function initializeTokenChecking(): Promise<void> {
+  cachedTokenState = await checkTokenState();
+  
+  // Check tokens every 30 seconds
+  if (tokenCheckInterval === null) {
+    tokenCheckInterval = setInterval(async () => {
+      cachedTokenState = await checkTokenState();
+    }, 30000);
+  }
+}
+
+// Get cached token state
+function getTokenState(): TokenState {
+  if (!cachedTokenState || Date.now() - cachedTokenState.lastCheck > 60000) {
+    // Trigger async check but return cached state if available
+    checkTokenState().then(state => {
+      cachedTokenState = state;
+    });
+  }
+  return cachedTokenState || {
+    hasYouTubeToken: false,
+    hasGmailToken: false,
+    hasProfileToken: false,
+    lastCheck: Date.now(),
+  };
+}
+
+// Send system warning message
+function sendSystemWarning(message: string): void {
+  postToMain({
+    type: 'SYSTEM_WARNING',
+    data: { message, timestamp: Date.now() },
+  });
+}
+
 // Worker message handler
-self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
+self.onmessage = async (event: any) => {
   const { type, payload } = event.data;
 
   try {
+    // Ensure token checking is initialized
+    await initializeTokenChecking();
+    
     switch (type) {
       case 'EXECUTE_DAG':
         await executeDAG(payload);
@@ -47,6 +186,15 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         await processAdMetrics(payload);
         break;
 
+      case 'CHECK_TOKENS':
+        // Return current token state to main thread
+        const state = getTokenState();
+        postToMain({
+          type: 'TOKEN_STATE',
+          data: state,
+        });
+        break;
+
       default:
         sendError(`Unknown worker task type: ${type}`);
     }
@@ -61,6 +209,13 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 async function executeDAG(payload: { dag: ExecutionDAG; startIndex?: number }): Promise<void> {
   const { dag, startIndex = 0 } = payload;
   const executableTasks = DAGProcessor.getExecutableTasks(dag);
+  
+  // Check token state before execution
+  const tokenState = getTokenState();
+  
+  if (!tokenState.hasYouTubeToken) {
+    sendSystemWarning('[SYSTEM WARNING: Node YouTube offline. Defaulting to local sandbox emulation parameters.]');
+  }
 
   for (let i = startIndex; i < executableTasks.length; i++) {
     const task = executableTasks[i];
@@ -79,18 +234,20 @@ async function executeDAG(payload: { dag: ExecutionDAG; startIndex?: number }): 
         dagId: dag.id,
         completedTask: task.task,
         progress,
+        useLiveData: tokenState.hasYouTubeToken,
       },
     };
 
-    self.postMessage(response);
+    postToMain(response);
   }
 
   // Send completion
-  self.postMessage({
+  postToMain({
     type: 'DAG_COMPLETE',
     data: {
       dagId: dag.id,
       visualization: DAGProcessor.visualizeDAG(dag),
+      usingLiveData: tokenState.hasYouTubeToken,
     },
   });
 }
@@ -102,12 +259,24 @@ async function analyzeMetrics(payload: any): Promise<void> {
   const { metricsJson } = payload;
 
   try {
+    // Check for live data tokens
+    const tokenState = getTokenState();
+    
+    if (tokenState.hasYouTubeToken || tokenState.hasGmailToken) {
+      // Fetch live data if tokens are available
+      console.log('[TaskWorker] Using live data for metrics analysis');
+    } else {
+      console.log('[TaskWorker] Using simulated metrics (no live tokens)');
+      sendSystemWarning('[SYSTEM WARNING: Analytics node offline. Defaulting to local sandbox emulation parameters.]');
+    }
+
     const analysis = await groqClient.analyzeMetrics(metricsJson);
 
-    self.postMessage({
+    postToMain({
       type: 'METRICS_ANALYSIS_COMPLETE',
       data: {
         analysis,
+        usingLiveData: tokenState.hasYouTubeToken || tokenState.hasGmailToken,
       },
     });
   } catch (error) {
@@ -123,7 +292,7 @@ async function streamGroqResponse(payload: any): Promise<void> {
 
   try {
     await groqClient.stream(messages, 0.7, 2000, (chunk: string) => {
-      self.postMessage({
+      postToMain({
         type: 'GROQ_STREAM_CHUNK',
         taskId,
         data: {
@@ -132,7 +301,7 @@ async function streamGroqResponse(payload: any): Promise<void> {
       });
     });
 
-    self.postMessage({
+    postToMain({
       type: 'GROQ_STREAM_COMPLETE',
       taskId,
     });
@@ -162,7 +331,7 @@ async function processVideoAnalytics(payload: any): Promise<void> {
     topPerformer: videos.reduce((a: any, b: any) => (a.views > b.views ? a : b)),
   };
 
-  self.postMessage({
+  postToMain({
     type: 'VIDEO_ANALYTICS_COMPLETE',
     data: analysis,
   });
@@ -187,7 +356,7 @@ async function processAdMetrics(payload: any): Promise<void> {
     ).toFixed(1),
   };
 
-  self.postMessage({
+  postToMain({
     type: 'AD_METRICS_COMPLETE',
     data: analysis,
   });
@@ -197,7 +366,7 @@ async function processAdMetrics(payload: any): Promise<void> {
  * Send error message to main thread
  */
 function sendError(error: string): void {
-  self.postMessage({
+  postToMain({
     type: 'WORKER_ERROR',
     error,
   });

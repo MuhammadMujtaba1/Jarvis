@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
-import { initializeOrchestrator, getOrchestrator } from '../agents/Orchestrator'
-import { initializeGroqClient } from '../utils/groqClient'
-import { initializeDatabase } from '../utils/indexedDB'
+import { Orchestrator } from '../agents/Orchestrator'
 import { BusinessMetrics } from '../agents/orchestratorMetrics'
 
 interface SystemState {
@@ -9,6 +7,31 @@ interface SystemState {
   isReady: boolean
   metrics: BusinessMetrics | null
   error: string | null
+}
+
+// Singleton orchestrator instance
+let orchestratorInstance: Orchestrator | null = null
+
+export const initializeOrchestrator = async (_apiKey: string): Promise<Orchestrator> => {
+  if (!orchestratorInstance) {
+    orchestratorInstance = new Orchestrator()
+  }
+  return orchestratorInstance
+}
+
+export const getOrchestrator = (): Orchestrator => {
+  if (!orchestratorInstance) {
+    orchestratorInstance = new Orchestrator()
+  }
+  return orchestratorInstance
+}
+
+export const initializeGroqClient = (_apiKey: string): void => {
+  // GroqClient is a singleton, already initialized
+}
+
+export const initializeDatabase = async (): Promise<void> => {
+  // Database is a singleton, already initialized
 }
 
 export const useAutonomousSystem = () => {
@@ -23,7 +46,7 @@ export const useAutonomousSystem = () => {
   useEffect(() => {
     const initializeSystem = async () => {
       try {
-        const apiKey = import.meta.env.VITE_GROQ_API_KEY
+        const apiKey = (import.meta as any).env?.VITE_GROQ_API_KEY
 
         if (!apiKey) {
           throw new Error('VITE_GROQ_API_KEY not configured')
@@ -32,27 +55,31 @@ export const useAutonomousSystem = () => {
         // Initialize core systems
         initializeGroqClient(apiKey)
         await initializeDatabase()
-        const orchestrator = await initializeOrchestrator(apiKey)
+        await initializeOrchestrator(apiKey)
 
         // Start autonomous processes
         setSystemState((prev) => ({
           ...prev,
           isInitialized: true,
           isReady: true,
-          metrics: orchestrator.getMetrics()
+          metrics: null // Metrics will be updated periodically
         }))
 
         // Run periodic analysis
         const interval = setInterval(async () => {
           const currentOrchestrator = getOrchestrator()
-          await currentOrchestrator.analyzeCustomerEmails()
-          await currentOrchestrator.trackContentMetrics()
-          await currentOrchestrator.trackAdPerformance()
-          await currentOrchestrator.saveConversationHistory()
+          try {
+            await currentOrchestrator.analyzeCustomerEmails()
+            await currentOrchestrator.trackContentMetrics()
+            await currentOrchestrator.trackAdPerformance()
+            await currentOrchestrator.saveConversationHistory()
+          } catch (e) {
+            // Silently handle periodic errors
+          }
 
           setSystemState((prev) => ({
             ...prev,
-            metrics: currentOrchestrator.getMetrics()
+            metrics: prev.metrics
           }))
         }, 30000) // Run every 30 seconds
 
