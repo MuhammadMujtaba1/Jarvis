@@ -1,0 +1,70 @@
+.task-monitor {
+  padding: 15px;
+  flex: 1;
+  min-height: 0;
+}
+
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.task-item {
+  display: flex;
+  gap: 10px;
+  padding: 8px;
+  border-left: 2px solid var(--color-cyan);
+  background: rgba(0, 217, 255, 0.05);
+  border-radius: 2px;
+  font-size: 10px;
+}
+
+.task-number {
+  color: var(--color-cyan);
+  font-weight: bold;
+  min-width: 20px;
+  text-shadow: 0 0 5px var(--color-cyan);
+}
+
+.task-info {
+  flex: 1;
+}
+
+.task-name {
+  color: var(--color-text);
+  margin-bottom: 3px;
+  font-weight: 500;
+}
+
+.task-status {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.task-status.pending {
+  color: #999;
+  background: rgba(153, 153, 153, 0.2);
+}
+
+.task-status.in_progress {
+  color: #ff8800;
+  background: rgba(255, 136, 0, 0.2);
+  animation: flicker 0.15s infinite;
+}
+
+.task-status.completed {
+  color: #00ff00;
+  background: rgba(0, 255, 0, 0.2);
+}
+
+.task-status.failed {
+  color: #ff0000;
+  background: rgba(255, 0, 0, 0.2);
+}

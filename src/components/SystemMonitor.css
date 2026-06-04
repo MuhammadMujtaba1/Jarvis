@@ -1,0 +1,53 @@
+.system-monitor {
+  padding: 15px;
+  flex-shrink: 0;
+}
+
+.monitor-header {
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--color-cyan);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 12px;
+  text-shadow: 0 0 5px var(--color-cyan);
+}
+
+.metric-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(0, 217, 255, 0.1);
+  font-size: 11px;
+}
+
+.metric-label {
+  color: var(--color-text-secondary);
+}
+
+.metric-value {
+  color: var(--color-cyan-light);
+  font-weight: bold;
+}
+
+.gauge {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  border: 2px solid var(--color-cyan);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 10px auto;
+  position: relative;
+  background: radial-gradient(circle, rgba(0, 217, 255, 0.1) 0%, transparent 70%);
+  box-shadow: 0 0 15px rgba(0, 217, 255, 0.3);
+}
+
+.gauge-value {
+  font-size: 24px;
+  font-weight: bold;
+  color: var(--color-cyan);
+  text-shadow: 0 0 10px var(--color-cyan);
+}
