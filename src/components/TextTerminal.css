@@ -1,0 +1,253 @@
+/**
+ * TEXT TERMINAL - Cyberpunk Styling
+ * High-contrast terminal interface matching HUD aesthetic
+ */
+
+.text-terminal {
+  background: linear-gradient(135deg, #0a0a12 0%, #12121f 100%);
+  border: 1px solid #00ff88;
+  border-radius: 8px;
+  padding: 16px;
+  font-family: 'Courier New', monospace;
+  color: #00ff88;
+  box-shadow: 
+    0 0 20px rgba(0, 255, 136, 0.15),
+    inset 0 0 40px rgba(0, 255, 136, 0.03);
+}
+
+.terminal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(0, 255, 136, 0.2);
+}
+
+.terminal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+
+.terminal-icon {
+  font-size: 16px;
+}
+
+.terminal-status {
+  font-size: 11px;
+}
+
+.status-processing {
+  color: #ffaa00;
+  animation: pulse-text 1s infinite;
+}
+
+.status-ready {
+  color: #00ff88;
+}
+
+@keyframes pulse-text {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* History Section */
+.terminal-history {
+  min-height: 120px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  border: 1px solid rgba(0, 255, 136, 0.1);
+}
+
+.terminal-history::-webkit-scrollbar {
+  width: 6px;
+}
+
+.terminal-history::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.terminal-history::-webkit-scrollbar-thumb {
+  background: #00ff88;
+  border-radius: 3px;
+}
+
+.terminal-placeholder {
+  color: #666;
+  font-size: 12px;
+  text-align: center;
+  padding: 40px 0;
+}
+
+.history-entry {
+  padding: 8px;
+  margin-bottom: 8px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.history-entry.user {
+  background: rgba(0, 170, 255, 0.1);
+  border-left: 3px solid #00aaff;
+}
+
+.history-entry.jarvis {
+  background: rgba(0, 255, 136, 0.1);
+  border-left: 3px solid #00ff88;
+}
+
+.entry-label {
+  display: block;
+  font-size: 10px;
+  margin-bottom: 4px;
+  opacity: 0.7;
+  letter-spacing: 1px;
+}
+
+.entry-text {
+  display: block;
+  word-wrap: break-word;
+}
+
+/* Input Section */
+.terminal-input-area {
+  margin-bottom: 12px;
+}
+
+.input-wrapper {
+  position: relative;
+}
+
+.terminal-textarea {
+  width: 100%;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(0, 255, 136, 0.3);
+  border-radius: 4px;
+  color: #00ff88;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  resize: none;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.terminal-textarea:focus {
+  border-color: #00ff88;
+  box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+}
+
+.terminal-textarea::placeholder {
+  color: #555;
+}
+
+.terminal-textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.input-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.char-count {
+  font-size: 10px;
+  color: #555;
+}
+
+/* Action Buttons */
+.terminal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-clear {
+  background: transparent;
+  border: 1px solid #666;
+  color: #888;
+}
+
+.btn-clear:hover:not(:disabled) {
+  border-color: #ff3366;
+  color: #ff3366;
+}
+
+.btn-submit {
+  flex: 1;
+  background: linear-gradient(180deg, #00ff88 0%, #00cc6a 100%);
+  color: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+}
+
+.btn-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+}
+
+.btn-submit:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-icon {
+  font-size: 10px;
+}
+
+/* Footer */
+.terminal-footer {
+  text-align: center;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 255, 136, 0.1);
+}
+
+.hint-text {
+  font-size: 10px;
+  color: #555;
+  letter-spacing: 1px;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .text-terminal {
+    padding: 12px;
+  }
+
+  .terminal-actions {
+    flex-direction: column;
+  }
+
+  .btn {
+    width: 100%;
+  }
+}

@@ -1,10 +1,14 @@
-import { useState, useEffect } from 'react'
+/**
+ * ENHANCED DASHBOARD - Main JARVIS Interface
+ * Clean implementation with text terminal and no infinite loops
+ */
+
+import { useState, useEffect, useCallback } from 'react'
 import { useAutonomousSystem } from '../hooks/useAutonomousSystem'
-import EnhancedVoiceControl from './EnhancedVoiceControl'
 import MetricsDisplay from './MetricsDisplay'
 import AgentMonitor from './AgentMonitor'
 import ContentCreationTracker from './ContentCreationTracker'
-import { Goal } from '../types'
+import TextTerminal from './TextTerminal'
 import '../styles/enhancedDashboard.css'
 
 interface EnhancedDashboardProps {
@@ -13,35 +17,53 @@ interface EnhancedDashboardProps {
 
 const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) => {
   const system = useAutonomousSystem()
-  const [activeGoal, setActiveGoal] = useState<Goal | null>(null)
-  const [timeDisplay, setTimeDisplay] = useState<string>('00:00:00')
+  const [timeDisplay, setTimeDisplay] = useState('00:00:00')
   const [systemLoad, setSystemLoad] = useState(45)
 
+  // Clock update - stable, no dependencies
   useEffect(() => {
-    const timer = setInterval(() => {
+    const updateClock = () => {
       const now = new Date()
       const hh = String(now.getHours()).padStart(2, '0')
       const mm = String(now.getMinutes()).padStart(2, '0')
       const ss = String(now.getSeconds()).padStart(2, '0')
-      setTimeDisplay(`${hh}:${mm}:${ss}`)
-    }, 1000)
-
+      setTimeDisplay(hh + ':' + mm + ':' + ss)
+    }
+    updateClock()
+    const timer = setInterval(updateClock, 1000)
     return () => clearInterval(timer)
   }, [])
 
+  // System load - stable, no dependencies  
   useEffect(() => {
-    // Simulate system load fluctuation
     const interval = setInterval(() => {
-      setSystemLoad((prev) => {
+      setSystemLoad(prev => {
         const change = (Math.random() - 0.5) * 10
         return Math.max(10, Math.min(100, prev + change))
       })
     }, 2000)
-
     return () => clearInterval(interval)
   }, [])
 
-  const getDateDisplay = () => {
+  // Handle command submission to orchestrator
+  const handleCommandSubmit = useCallback(async (command: string) => {
+    if (!command.trim() || system.isProcessing) return
+
+    system.setProcessing(true)
+    
+    try {
+      console.log('[Dashboard] Command:', command)
+      // Route to orchestrator conversationResponse
+      const response = await system.orchestrator?.conversationResponse(command)
+      console.log('[Dashboard] JARVIS response:', response)
+    } catch (error) {
+      console.error('[Dashboard] Command error:', error)
+    } finally {
+      system.setProcessing(false)
+    }
+  }, [system])
+
+  const dateInfo = (() => {
     const now = new Date()
     const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
     const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
@@ -50,9 +72,7 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
       month: months[now.getMonth()],
       date: String(now.getDate()).padStart(2, '0')
     }
-  }
-
-  const dateInfo = getDateDisplay()
+  })()
 
   return (
     <div className="enhanced-dashboard">
@@ -78,7 +98,7 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
 
         {/* Storage Metrics */}
         <div className="storage-panel panel-enhanced">
-          <div className="panel-title text-glow">💾 STORAGE</div>
+          <div className="panel-title text-glow">STORAGE</div>
           <div className="metric-row">
             <span>Full Capacity:</span>
             <span className="value">116 G</span>
@@ -94,7 +114,7 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
 
         {/* System Power */}
         <div className="power-panel panel-enhanced">
-          <div className="panel-title text-glow">⚡ PERFORMANCE</div>
+          <div className="panel-title text-glow">PERFORMANCE</div>
           <div className="power-gauge">
             <div className="gauge-circle">
               <div className="gauge-value">{systemLoad.toFixed(0)}%</div>
@@ -105,49 +125,44 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
 
         {/* System Controls */}
         <div className="control-grid panel-enhanced">
-          <div className="panel-title text-glow">⚙️ CONTROL</div>
+          <div className="panel-title text-glow">CONTROL</div>
           <button className="control-btn">EJECT SPACE</button>
           <button className="control-btn">REBOOT MATRIX</button>
           <button className="control-btn">PURGE BUFFER</button>
         </div>
       </div>
 
-      {/* CENTER PANEL - Central Hub */}
+      {/* CENTER PANEL - Central Hub with Text Terminal */}
       <div className="panel-center-enhanced">
         {/* Concentric Ring Visualizer */}
         <div className="ring-visualizer">
           <svg viewBox="0 0 400 400" className="ring-svg">
-            {/* Outer rings */}
             <circle cx="200" cy="200" r="180" className="ring ring-1" />
             <circle cx="200" cy="200" r="140" className="ring ring-2" />
             <circle cx="200" cy="200" r="100" className="ring ring-3" />
             <circle cx="200" cy="200" r="60" className="ring ring-4" />
-
-            {/* Center circle */}
             <circle cx="200" cy="200" r="40" className="ring-center" />
             <text x="200" y="210" className="ring-text">JARVIS</text>
           </svg>
 
           {/* Quick app links */}
           <div className="app-links">
-            <div className="app-link">📧 Gmail</div>
-            <div className="app-link">📖 Wikipedia</div>
-            <div className="app-link">🎮 Kotaku</div>
-            <div className="app-link">🐦 Twitter</div>
-            <div className="app-link">👤 Facebook</div>
-            <div className="app-link">🎥 YouTube</div>
+            <div className="app-link">Gmail</div>
+            <div className="app-link">Wikipedia</div>
+            <div className="app-link">Twitter</div>
+            <div className="app-link">YouTube</div>
           </div>
         </div>
 
+        {/* TEXT TERMINAL - Command Input */}
+        <TextTerminal 
+          onCommandSubmit={handleCommandSubmit}
+          isProcessing={system.isProcessing}
+          disabled={!systemReady || !system.isReady}
+        />
+
         {/* Content Creation Tracker */}
         <ContentCreationTracker metrics={system.metrics} />
-
-        {/* Voice Control */}
-        <EnhancedVoiceControl
-          systemReady={systemReady && system.isReady}
-          onGoalCreate={setActiveGoal}
-          onMetricsUpdate={(metrics) => system.updateMetrics(metrics)}
-        />
       </div>
 
       {/* RIGHT PANEL - Analytics & Monitoring */}
@@ -157,18 +172,18 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
 
         {/* Network Traffic */}
         <div className="network-panel panel-enhanced">
-          <div className="panel-title text-glow">🌐 NETWORK</div>
+          <div className="panel-title text-glow">NETWORK</div>
           <div className="network-item">
             <span>LAN:</span>
             <span className="value">2.241.167.250</span>
           </div>
           <div className="network-item">
             <span>Download:</span>
-            <span className="value">↓ 5.2 Mbps</span>
+            <span className="value">5.2 Mbps</span>
           </div>
           <div className="network-item">
             <span>Upload:</span>
-            <span className="value">↑ 2.1 Mbps</span>
+            <span className="value">2.1 Mbps</span>
           </div>
         </div>
 
@@ -177,8 +192,8 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
 
         {/* Ad Performance */}
         <div className="ad-panel panel-enhanced">
-          <div className="panel-title text-glow">💰 AD PERFORMANCE</div>
-          {system.metrics && (
+          <div className="panel-title text-glow">AD PERFORMANCE</div>
+          {system.metrics?.adPerformance && (
             <>
               <div className="metric-row">
                 <span>Spend:</span>
@@ -205,23 +220,19 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
       <div className="status-bar-enhanced">
         <div className="status-item">
           <span className="label">SYSTEM:</span>
-          <span className={`value ${system.isReady ? 'online' : 'offline'}`}>
-            {system.isReady ? '● ONLINE' : '● OFFLINE'}
+          <span className={'value ' + (system.isReady ? 'online' : 'offline')}>
+            {system.isReady ? 'ONLINE' : 'OFFLINE'}
           </span>
         </div>
         <div className="status-item">
-          <span className="label">EMAILS PROCESSED:</span>
+          <span className="label">MODE:</span>
           <span className="value">
-            {system.metrics?.customerEmails.resolved}/{system.metrics?.customerEmails.total}
+            {system.isProcessing ? 'PROCESSING' : 'READY'}
           </span>
         </div>
         <div className="status-item">
-          <span className="label">VIDEO VIEWS:</span>
-          <span className="value">{system.metrics?.contentCreations.totalViews.toLocaleString()}</span>
-        </div>
-        <div className="status-item">
-          <span className="label">WEEKLY REVENUE:</span>
-          <span className="value">${system.metrics?.weeklyRevenue}</span>
+          <span className="label">API:</span>
+          <span className="value">GROQ ACTIVE</span>
         </div>
       </div>
     </div>
