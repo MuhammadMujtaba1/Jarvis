@@ -1,6 +1,6 @@
 /**
  * ENHANCED DASHBOARD - Main JARVIS Interface
- * Clean implementation with text terminal and no infinite loops
+ * Refactored layout: Vertical links to right of central HUD, clean architecture
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -10,6 +10,16 @@ import AgentMonitor from './AgentMonitor'
 import ContentCreationTracker from './ContentCreationTracker'
 import TextTerminal from './TextTerminal'
 import '../styles/enhancedDashboard.css'
+
+// Navigation link data with status
+const NAV_LINKS = [
+  { name: 'Gmail', icon: '📧', status: true },
+  { name: 'Wikipedia', icon: '📖', status: true },
+  { name: 'Kotaku', icon: '🎮', status: false },
+  { name: 'Twitter', icon: '🐦', status: false },
+  { name: 'Facebook', icon: '👤', status: false },
+  { name: 'YouTube', icon: '🎥', status: true },
+]
 
 interface EnhancedDashboardProps {
   systemReady: boolean
@@ -48,12 +58,9 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
   // Handle command submission to orchestrator
   const handleCommandSubmit = useCallback(async (command: string) => {
     if (!command.trim() || system.isProcessing) return
-
     system.setProcessing(true)
-    
     try {
       console.log('[Dashboard] Command:', command)
-      // Route to orchestrator conversationResponse
       const response = await system.orchestrator?.conversationResponse(command)
       console.log('[Dashboard] JARVIS response:', response)
     } catch (error) {
@@ -78,27 +85,22 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
     <div className="enhanced-dashboard">
       {/* Background grid effect */}
       <div className="dashboard-grid"></div>
-
-      {/* Scan line effect */}
       <div className="scanlines"></div>
 
-      {/* LEFT PANEL - System Information & Controls */}
+      {/* LEFT PANEL - System Metrics (Storage, Capacity, Power) */}
       <div className="panel-left-enhanced">
-        {/* Time Display */}
         <div className="time-display-enhanced neon-border">
           <div className="time-value text-glow">{timeDisplay}</div>
           <div className="time-sub">{dateInfo.day}</div>
         </div>
 
-        {/* Date Circle */}
         <div className="date-circle-enhanced neon-border">
           <div className="date-month text-glow">{dateInfo.month}</div>
           <div className="date-num text-glow">{dateInfo.date}</div>
         </div>
 
-        {/* Storage Metrics */}
         <div className="storage-panel panel-enhanced">
-          <div className="panel-title text-glow">STORAGE</div>
+          <div className="panel-title text-glow">💾 STORAGE</div>
           <div className="metric-row">
             <span>Full Capacity:</span>
             <span className="value">116 G</span>
@@ -112,9 +114,8 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
           </div>
         </div>
 
-        {/* System Power */}
         <div className="power-panel panel-enhanced">
-          <div className="panel-title text-glow">PERFORMANCE</div>
+          <div className="panel-title text-glow">⚡ PERFORMANCE</div>
           <div className="power-gauge">
             <div className="gauge-circle">
               <div className="gauge-value">{systemLoad.toFixed(0)}%</div>
@@ -123,18 +124,16 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
           <div className="power-status">High Performance</div>
         </div>
 
-        {/* System Controls */}
         <div className="control-grid panel-enhanced">
-          <div className="panel-title text-glow">CONTROL</div>
+          <div className="panel-title text-glow">⚙️ CONTROL</div>
           <button className="control-btn">EJECT SPACE</button>
           <button className="control-btn">REBOOT MATRIX</button>
           <button className="control-btn">PURGE BUFFER</button>
         </div>
       </div>
 
-      {/* CENTER PANEL - Central Hub with Text Terminal */}
+      {/* CENTER PANEL - Core HUD Ring */}
       <div className="panel-center-enhanced">
-        {/* Concentric Ring Visualizer */}
         <div className="ring-visualizer">
           <svg viewBox="0 0 400 400" className="ring-svg">
             <circle cx="200" cy="200" r="180" className="ring ring-1" />
@@ -144,17 +143,20 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
             <circle cx="200" cy="200" r="40" className="ring-center" />
             <text x="200" y="210" className="ring-text">JARVIS</text>
           </svg>
-
-          {/* Quick app links */}
-          <div className="app-links">
-            <div className="app-link">Gmail</div>
-            <div className="app-link">Wikipedia</div>
-            <div className="app-link">Twitter</div>
-            <div className="app-link">YouTube</div>
-          </div>
         </div>
 
-        {/* TEXT TERMINAL - Command Input */}
+        {/* Vertical Navigation Links - Positioned to the right of HUD */}
+        <div className="vertical-nav-links">
+          {NAV_LINKS.map((link, index) => (
+            <div key={index} className="nav-link-item">
+              <span className={`status-dot ${link.status ? 'active' : 'inactive'}`}></span>
+              <span className="nav-link-icon">{link.icon}</span>
+              <span className="nav-link-name">{link.name}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Text Terminal - Command Input */}
         <TextTerminal 
           onCommandSubmit={handleCommandSubmit}
           isProcessing={system.isProcessing}
@@ -165,14 +167,12 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
         <ContentCreationTracker metrics={system.metrics} />
       </div>
 
-      {/* RIGHT PANEL - Analytics & Monitoring */}
+      {/* RIGHT PANEL - Agent Status & System Resources */}
       <div className="panel-right-enhanced">
-        {/* System Metrics */}
         <MetricsDisplay metrics={system.metrics} />
 
-        {/* Network Traffic */}
         <div className="network-panel panel-enhanced">
-          <div className="panel-title text-glow">NETWORK</div>
+          <div className="panel-title text-glow">🌐 NETWORK</div>
           <div className="network-item">
             <span>LAN:</span>
             <span className="value">2.241.167.250</span>
@@ -187,12 +187,10 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
           </div>
         </div>
 
-        {/* Agent Status Monitor */}
         <AgentMonitor orchestrator={system.orchestrator} />
 
-        {/* Ad Performance */}
         <div className="ad-panel panel-enhanced">
-          <div className="panel-title text-glow">AD PERFORMANCE</div>
+          <div className="panel-title text-glow">💰 AD PERFORMANCE</div>
           {system.metrics?.adPerformance && (
             <>
               <div className="metric-row">
@@ -221,13 +219,13 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
         <div className="status-item">
           <span className="label">SYSTEM:</span>
           <span className={'value ' + (system.isReady ? 'online' : 'offline')}>
-            {system.isReady ? 'ONLINE' : 'OFFLINE'}
+            {system.isReady ? '● ONLINE' : '● OFFLINE'}
           </span>
         </div>
         <div className="status-item">
           <span className="label">MODE:</span>
           <span className="value">
-            {system.isProcessing ? 'PROCESSING' : 'READY'}
+            {system.isProcessing ? '⚡ PROCESSING' : '✓ READY'}
           </span>
         </div>
         <div className="status-item">
