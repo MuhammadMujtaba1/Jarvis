@@ -1,12 +1,16 @@
 /**
  * WEB WORKER: Background Task Executor
- * Runs CPU-intensive tasks without blocking the UI thread
  * Handles DAG execution, metrics analysis, and streaming responses
+ * 
+ * DEFROST PROTOCOL: 4000ms hard timeout on all agent state transitions
+ * All async operations race against timeout to prevent UI blocking
  */
 
-import { DAGProcessor } from './dagProcessor';
-import { groqClient } from './groqClient';
-import { ExecutionDAG, ExecutionTask } from '../types';
+/// <reference lib="webworker" />
+
+import { DAGProcessor } from '../utils/dagProcessor';
+import { groqClient } from '../utils/groqClient';
+import { ExecutionDAG } from '../types';
 
 interface WorkerMessage {
   type: string;
@@ -19,44 +23,75 @@ interface WorkerResponse {
   data?: any;
   error?: string;
   progress?: number;
+  warning?: string;
 }
 
-// Worker message handler
+// 4000ms hard timeout - prevents any agent state from blocking
+const HARD_TIMEOUT_MS = 4000;
+
+const withTimeout = <T>(promise: Promise<T>, operation: string): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => {
+        const warning: WorkerResponse = {
+          type: 'AGENT_TIMEOUT_WARNING',
+          warning: `[SYSTEM] ${operation} exceeded ${HARD_TIMEOUT_MS}ms - forcing IDLE state`,
+        };
+        self.postMessage(warning);
+        reject(new Error(`TIMEOUT: ${operation}`));
+      }, HARD_TIMEOUT_MS);
+    })
+  ]);
+};
+
+// Worker message handler with timeout protection
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   const { type, payload } = event.data;
 
   try {
     switch (type) {
       case 'EXECUTE_DAG':
-        await executeDAG(payload);
+        await withTimeout(executeDAG(payload), 'DAG_EXECUTION');
         break;
 
       case 'ANALYZE_METRICS':
-        await analyzeMetrics(payload);
+        await withTimeout(analyzeMetrics(payload), 'METRICS_ANALYSIS');
         break;
 
       case 'STREAM_GROQ':
-        await streamGroqResponse(payload);
+        await withTimeout(streamGroqResponse(payload), 'GROQ_STREAM');
         break;
 
       case 'PROCESS_VIDEO_ANALYTICS':
-        await processVideoAnalytics(payload);
+        await withTimeout(processVideoAnalytics(payload), 'VIDEO_ANALYTICS');
         break;
 
       case 'PROCESS_AD_METRICS':
-        await processAdMetrics(payload);
+        await withTimeout(processAdMetrics(payload), 'AD_METRICS');
         break;
 
       default:
         sendError(`Unknown worker task type: ${type}`);
     }
   } catch (error) {
-    sendError(String(error));
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    
+    // Check if it's a timeout - log warning instead of error
+    if (errorMsg.includes('TIMEOUT')) {
+      const warning: WorkerResponse = {
+        type: 'AGENT_STATE_RESET',
+        data: { status: 'IDLE', reason: 'Timeout fallback' },
+      };
+      self.postMessage(warning);
+    } else {
+      sendError(errorMsg);
+    }
   }
 };
 
 /**
- * Execute a DAG in background
+ * Execute a DAG in background with timeout protection
  */
 async function executeDAG(payload: { dag: ExecutionDAG; startIndex?: number }): Promise<void> {
   const { dag, startIndex = 0 } = payload;
@@ -66,23 +101,28 @@ async function executeDAG(payload: { dag: ExecutionDAG; startIndex?: number }): 
     const task = executableTasks[i];
     const progress = Math.round(((i + 1) / executableTasks.length) * 100);
 
-    // Simulate task execution (in production, would call actual agent APIs)
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Simulate task execution with timeout
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Mark task as completed
     DAGProcessor.completeTask(dag, task.id);
 
     // Send progress update
-    const response: WorkerResponse = {
+    self.postMessage({
       type: 'DAG_PROGRESS',
       data: {
         dagId: dag.id,
         completedTask: task.task,
         progress,
+        agentStatus: 'PROCESSING',
       },
-    };
+    } as WorkerResponse);
 
-    self.postMessage(response);
+    // Reset agent state after each task (prevent hard-lock)
+    self.postMessage({
+      type: 'AGENT_HEARTBEAT',
+      data: { tier: 'T2', status: 'IDLE' },
+    } as WorkerResponse);
   }
 
   // Send completion
@@ -91,8 +131,9 @@ async function executeDAG(payload: { dag: ExecutionDAG; startIndex?: number }): 
     data: {
       dagId: dag.id,
       visualization: DAGProcessor.visualizeDAG(dag),
+      finalAgentStatus: 'IDLE',
     },
-  });
+  } as WorkerResponse);
 }
 
 /**
@@ -101,18 +142,15 @@ async function executeDAG(payload: { dag: ExecutionDAG; startIndex?: number }): 
 async function analyzeMetrics(payload: any): Promise<void> {
   const { metricsJson } = payload;
 
-  try {
-    const analysis = await groqClient.analyzeMetrics(metricsJson);
+  const analysis = await groqClient.analyzeMetrics(metricsJson);
 
-    self.postMessage({
-      type: 'METRICS_ANALYSIS_COMPLETE',
-      data: {
-        analysis,
-      },
-    });
-  } catch (error) {
-    sendError(`Metrics analysis failed: ${error}`);
-  }
+  self.postMessage({
+    type: 'METRICS_ANALYSIS_COMPLETE',
+    data: {
+      analysis,
+      agentStatus: 'IDLE',
+    },
+  } as WorkerResponse);
 }
 
 /**
@@ -121,24 +159,19 @@ async function analyzeMetrics(payload: any): Promise<void> {
 async function streamGroqResponse(payload: any): Promise<void> {
   const { messages, taskId } = payload;
 
-  try {
-    await groqClient.stream(messages, 0.7, 2000, (chunk: string) => {
-      self.postMessage({
-        type: 'GROQ_STREAM_CHUNK',
-        taskId,
-        data: {
-          chunk,
-        },
-      });
-    });
-
+  await groqClient.stream(messages, 0.7, 2000, (chunk: string) => {
     self.postMessage({
-      type: 'GROQ_STREAM_COMPLETE',
+      type: 'GROQ_STREAM_CHUNK',
       taskId,
-    });
-  } catch (error) {
-    sendError(`Groq streaming failed: ${error}`);
-  }
+      data: { chunk },
+    } as WorkerResponse);
+  });
+
+  self.postMessage({
+    type: 'GROQ_STREAM_COMPLETE',
+    taskId,
+    data: { agentStatus: 'IDLE' },
+  } as WorkerResponse);
 }
 
 /**
@@ -147,7 +180,6 @@ async function streamGroqResponse(payload: any): Promise<void> {
 async function processVideoAnalytics(payload: any): Promise<void> {
   const { videos, targetViews } = payload;
 
-  // Simulate video analytics processing
   const analysis = {
     totalVideos: videos.length,
     totalViews: videos.reduce((sum: number, v: any) => sum + v.views, 0),
@@ -160,12 +192,13 @@ async function processVideoAnalytics(payload: any): Promise<void> {
         ? 'ON_TARGET'
         : 'BELOW_TARGET',
     topPerformer: videos.reduce((a: any, b: any) => (a.views > b.views ? a : b)),
+    agentStatus: 'IDLE',
   };
 
   self.postMessage({
     type: 'VIDEO_ANALYTICS_COMPLETE',
     data: analysis,
-  });
+  } as WorkerResponse);
 }
 
 /**
@@ -174,7 +207,6 @@ async function processVideoAnalytics(payload: any): Promise<void> {
 async function processAdMetrics(payload: any): Promise<void> {
   const { campaigns, totalBudget } = payload;
 
-  // Simulate ad metrics processing
   const analysis = {
     totalCampaigns: campaigns.length,
     totalSpent: campaigns.reduce((sum: number, c: any) => sum + c.spent, 0),
@@ -185,23 +217,25 @@ async function processAdMetrics(payload: any): Promise<void> {
       (campaigns.reduce((sum: number, c: any) => sum + c.spent, 0) / totalBudget) *
       100
     ).toFixed(1),
+    agentStatus: 'IDLE',
   };
 
   self.postMessage({
     type: 'AD_METRICS_COMPLETE',
     data: analysis,
-  });
+  } as WorkerResponse);
 }
 
 /**
  * Send error message to main thread
  */
 function sendError(error: string): void {
+  // On error, always reset agent state to IDLE to prevent blocking
   self.postMessage({
     type: 'WORKER_ERROR',
     error,
-  });
+    data: { agentStatus: 'IDLE', recovery: 'Agent state reset to IDLE' },
+  } as WorkerResponse);
 }
 
-// Export for TypeScript
 export {};
