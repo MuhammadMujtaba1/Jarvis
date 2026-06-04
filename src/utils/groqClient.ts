@@ -31,7 +31,8 @@ export class GroqClient {
   private model = 'mixtral-8x7b-32768';
 
   constructor() {
-    this.apiKey = import.meta.env.VITE_GROQ_API_KEY || '';
+    // DIAGNOSTIC FIX: Safe import.meta access
+    this.apiKey = (import.meta as any).env?.VITE_GROQ_API_KEY || '';
     if (!this.apiKey) {
       console.warn('⚠️ GROQ_API_KEY not configured in environment');
     }

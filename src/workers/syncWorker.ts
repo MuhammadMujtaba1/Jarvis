@@ -1,4 +1,12 @@
+/// <reference lib="webworker" />
+
 // Service Worker for background sync and offline support
+
+declare const swSelf: ServiceWorkerGlobalScope & typeof globalThis & {
+  skipWaiting: () => void;
+  clients: { claim: () => void };
+  addEventListener: (type: string, listener: any) => void;
+};
 
 const CACHE_NAME = 'jarvis-v1'
 const urlsToCache = [
@@ -7,36 +15,44 @@ const urlsToCache = [
   '/App.css'
 ]
 
+// Cast self properly for service worker context
+const serviceSelf = self as unknown as {
+  addEventListener: (type: string, listener: (event: any) => void) => void;
+  skipWaiting: () => void;
+  clients: { claim: () => void };
+  caches: { open: (name: string) => Promise<Cache>; delete: (name: string) => Promise<boolean>; keys: () => Promise<string[]> };
+};
+
 // Install event - cache assets
-self.addEventListener('install', (event: ExtendableEvent) => {
+serviceSelf.addEventListener('install', (event: any) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
+    serviceSelf.caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(urlsToCache)
     })
   )
-  self.skipWaiting()
+  serviceSelf.skipWaiting()
 })
 
 // Activate event - clean up old caches
-self.addEventListener('activate', (event: ExtendableEvent) => {
+serviceSelf.addEventListener('activate', (event: any) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    serviceSelf.caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName)
+            return serviceSelf.caches.delete(cacheName)
           }
         })
       )
     })
   )
-  self.clients.claim()
+  serviceSelf.clients.claim()
 })
 
 // Fetch event - serve from cache, fallback to network
-self.addEventListener('fetch', (event: FetchEvent) => {
+serviceSelf.addEventListener('fetch', (event: any) => {
   event.respondWith(
-    caches.match(event.request).then((response) => {
+    serviceSelf.caches.match(event.request).then((response) => {
       if (response) {
         return response
       }
@@ -45,7 +61,7 @@ self.addEventListener('fetch', (event: FetchEvent) => {
           return response
         }
         const responseToCache = response.clone()
-        caches.open(CACHE_NAME).then((cache) => {
+        serviceSelf.caches.open(CACHE_NAME).then((cache) => {
           cache.put(event.request, responseToCache)
         })
         return response
@@ -55,10 +71,9 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 })
 
 // Background sync
-self.addEventListener('sync', (event: any) => {
+serviceSelf.addEventListener('sync', (event: any) => {
   if (event.tag === 'sync-tasks') {
     event.waitUntil(
-      // Sync pending tasks with server
       Promise.resolve()
     )
   }

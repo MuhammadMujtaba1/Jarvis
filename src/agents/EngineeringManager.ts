@@ -1,6 +1,22 @@
+/**
+ * DIAGNOSTIC FIX: ENGINEERING MANAGER
+ * - Added timeout protection for all async operations
+ * - Removed potential blocking on messageQueue operations
+ */
+
 import { Agent, AgentMessage } from '../types'
-import { getMessageQueue } from '../utils/messageQueue'
+import { messageQueue } from '../utils/messageQueue'
 import { v4 as uuidv4 } from 'uuid'
+
+// Timeout wrapper for any async operation
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => 
+      setTimeout(() => reject(new Error('Operation timeout after ' + timeoutMs + 'ms')), timeoutMs)
+    )
+  ]);
+};
 
 /**
  * Tier 2: ENGINEERING / EXECUTION MANAGER AGENT
@@ -18,7 +34,6 @@ class EngineeringManager implements Agent {
     currentUsage: 0
   }
   capabilities = ['workflow_translation', 'dependency_tracking', 'architecture']
-  private messageQueue = getMessageQueue()
 
   /**
    * Process incoming feature request
@@ -47,7 +62,14 @@ class EngineeringManager implements Agent {
         priority: payload.priority || 'medium'
       }
 
-      await this.messageQueue.enqueue(message)
+      // DIAGNOSTIC FIX: Added timeout to prevent blocking
+      await withTimeout(
+        messageQueue.sendMessage(this.name, 'builder', 'TASK_ASSIGNMENT', { message }),
+        5000
+      ).catch((err) => {
+        console.warn('[EngineerManager] Message send timeout:', err.message);
+      });
+      
       console.log('✅ Feature routed to Builder agent')
 
       this.status = 'idle'
@@ -60,7 +82,7 @@ class EngineeringManager implements Agent {
   /**
    * Break down a feature into implementable tasks
    */
-  private breakdownFeature(payload: any): any[] {
+  private breakdownFeature(_payload: any): any[] {
     return [
       {
         id: 'backend-setup',

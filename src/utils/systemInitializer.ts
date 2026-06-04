@@ -1,10 +1,19 @@
 import { Agent, JarvisConfig } from '../types'
 
-const defaultConfig: JarvisConfig = {
-  groqApiKey: import.meta.env.VITE_GROQ_API_KEY || '',
-  groqModel: import.meta.env.VITE_GROQ_MODEL || 'mixtral-8x7b-32768',
-  voiceEnabled: import.meta.env.VITE_VOICE_ENABLED !== 'false',
-  voiceLanguage: import.meta.env.VITE_VOICE_LANG || 'en-US',
+// DIAGNOSTIC FIX: Safe import.meta access
+const env = (import.meta as any).env || {};
+
+interface ExtendedJarvisConfig extends JarvisConfig {
+  maxConcurrentTasks: number;
+  dbName: string;
+  enableOfflineMode: boolean;
+}
+
+const defaultConfig: ExtendedJarvisConfig = {
+  groqApiKey: env.VITE_GROQ_API_KEY || '',
+  groqModel: env.VITE_GROQ_MODEL || 'mixtral-8x7b-32768',
+  voiceEnabled: env.VITE_VOICE_ENABLED !== 'false',
+  voiceLanguage: env.VITE_VOICE_LANG || 'en-US',
   maxConcurrentTasks: 5,
   dbName: 'JarvisDB',
   enableOfflineMode: true

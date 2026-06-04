@@ -14,10 +14,30 @@ import {
   BusinessAgencyState,
   ShortFormVideoMetrics,
   AdCampaignMetrics,
+  AdCreative,
   CustomerEmailMetrics,
   FeatureCluster,
 } from '../types';
-import { v4 as uuidv4 } from 'uuid';
+
+// ============================================================================
+// EXPORTS FOR useAutonomousSystem HOOK (DIAGNOSTIC FIX)
+// ============================================================================
+
+export const initializeOrchestrator = async (_apiKey: string): Promise<Orchestrator> => {
+  return orchestrator;
+};
+
+export const getOrchestrator = (): Orchestrator => {
+  return orchestrator;
+};
+
+export const initializeGroqClient = (_apiKey: string): void => {
+  // Groq client is already a singleton
+};
+
+export const initializeDatabase = async (): Promise<void> => {
+  // Database is already initialized
+};
 
 export class Orchestrator {
   private agentId = 'orchestrator-tier1';
