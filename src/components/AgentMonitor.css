@@ -1,0 +1,73 @@
+.agent-monitor {
+  padding: 15px;
+  margin-top: 15px;
+  flex-shrink: 0;
+}
+
+.agents-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.agent-badge {
+  padding: 10px;
+  background: rgba(0, 217, 255, 0.05);
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  border-radius: 4px;
+  text-align: center;
+  font-size: 10px;
+  transition: all 0.3s ease;
+}
+
+.agent-badge:hover {
+  background: rgba(0, 217, 255, 0.1);
+  border-color: var(--color-cyan);
+  box-shadow: 0 0 10px rgba(0, 217, 255, 0.3);
+}
+
+.agent-name {
+  color: var(--color-text);
+  font-weight: bold;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.agent-tier {
+  color: var(--color-cyan);
+  font-size: 12px;
+  font-weight: bold;
+  text-shadow: 0 0 5px var(--color-cyan);
+  margin-bottom: 4px;
+}
+
+.agent-status {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.agent-status.active {
+  background: rgba(0, 255, 0, 0.2);
+  color: #00ff00;
+}
+
+.agent-status.idle {
+  background: rgba(136, 136, 136, 0.2);
+  color: #888888;
+}
+
+.agent-status.processing {
+  background: rgba(255, 136, 0, 0.2);
+  color: #ff8800;
+  animation: flicker 0.15s infinite;
+}
+
+.agent-status.waiting {
+  background: rgba(0, 217, 255, 0.2);
+  color: var(--color-cyan);
+}
