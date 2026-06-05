@@ -3,7 +3,7 @@
  * Handles DAG execution, metrics analysis, and streaming responses
  * 
  * DEFROST PROTOCOL: 4000ms hard timeout on all agent state transitions
- * All async operations race against timeout to prevent UI blocking
+ * EXPONENTIAL BACKOFF: Auto-pause after 3 consecutive failures (5s -> 10s -> 20s -> max 30s)
  */
 
 /// <reference lib="webworker" />
@@ -26,73 +26,124 @@ interface WorkerResponse {
   warning?: string;
 }
 
-// 4000ms hard timeout - prevents any agent state from blocking
+// 4000ms hard timeout
 const HARD_TIMEOUT_MS = 4000;
+
+// Backoff state
+let consecutiveFailures = 0;
+let isBackingOff = false;
+let currentBackoffMs = 5000;
+
+const sendMessage = (data: WorkerResponse) => self.postMessage(data);
 
 const withTimeout = <T>(promise: Promise<T>, operation: string): Promise<T> => {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) => {
       setTimeout(() => {
-        const warning: WorkerResponse = {
+        sendMessage({
           type: 'AGENT_TIMEOUT_WARNING',
           warning: `[SYSTEM] ${operation} exceeded ${HARD_TIMEOUT_MS}ms - forcing IDLE state`,
-        };
-        self.postMessage(warning);
+        });
         reject(new Error(`TIMEOUT: ${operation}`));
       }, HARD_TIMEOUT_MS);
     })
   ]);
 };
 
+const resetBackoff = () => {
+  consecutiveFailures = 0;
+  isBackingOff = false;
+  currentBackoffMs = 5000;
+  sendMessage({ type: 'BACKOFF_RESET' });
+};
+
+const incrementBackoff = () => {
+  consecutiveFailures++;
+  if (consecutiveFailures >= 3) {
+    isBackingOff = true;
+    currentBackoffMs = Math.min(currentBackoffMs * 2, 30000);
+    sendMessage({
+      type: 'BACKOFF_ACTIVE',
+      data: { delayMs: currentBackoffMs, consecutiveFailures }
+    });
+  }
+};
+
 // Worker message handler with timeout protection
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   const { type, payload } = event.data;
+
+  // Skip if backing off
+  if (isBackingOff && type !== 'RESET_BACKOFF' && type !== 'GET_STATUS') {
+    sendMessage({
+      type: 'TASK_SKIPPED',
+      data: { reason: 'Backoff active', nextRetryMs: currentBackoffMs }
+    });
+    return;
+  }
 
   try {
     switch (type) {
       case 'EXECUTE_DAG':
         await withTimeout(executeDAG(payload), 'DAG_EXECUTION');
+        resetBackoff();
         break;
 
       case 'ANALYZE_METRICS':
         await withTimeout(analyzeMetrics(payload), 'METRICS_ANALYSIS');
+        resetBackoff();
         break;
 
       case 'STREAM_GROQ':
         await withTimeout(streamGroqResponse(payload), 'GROQ_STREAM');
+        resetBackoff();
         break;
 
       case 'PROCESS_VIDEO_ANALYTICS':
         await withTimeout(processVideoAnalytics(payload), 'VIDEO_ANALYTICS');
+        resetBackoff();
         break;
 
       case 'PROCESS_AD_METRICS':
         await withTimeout(processAdMetrics(payload), 'AD_METRICS');
+        resetBackoff();
+        break;
+
+      case 'RESET_BACKOFF':
+        resetBackoff();
+        break;
+
+      case 'GET_STATUS':
+        sendMessage({
+          type: 'STATUS',
+          data: { isBackingOff, consecutiveFailures, currentBackoffMs }
+        });
         break;
 
       default:
-        sendError(`Unknown worker task type: ${type}`);
+        sendMessage({ type: 'ERROR', error: `Unknown task type: ${type}` });
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     
-    // Check if it's a timeout - log warning instead of error
     if (errorMsg.includes('TIMEOUT')) {
-      const warning: WorkerResponse = {
+      incrementBackoff();
+      sendMessage({
         type: 'AGENT_STATE_RESET',
-        data: { status: 'IDLE', reason: 'Timeout fallback' },
-      };
-      self.postMessage(warning);
+        data: { status: 'IDLE', reason: 'Timeout fallback' }
+      });
     } else {
-      sendError(errorMsg);
+      incrementBackoff();
+      sendMessage({
+        type: 'WORKER_ERROR',
+        error: errorMsg,
+        data: { agentStatus: 'IDLE', recovery: 'Agent state reset to IDLE' }
+      });
     }
   }
 };
 
-/**
- * Execute a DAG in background with timeout protection
- */
 async function executeDAG(payload: { dag: ExecutionDAG; startIndex?: number }): Promise<void> {
   const { dag, startIndex = 0 } = payload;
   const executableTasks = DAGProcessor.getExecutableTasks(dag);
@@ -101,14 +152,10 @@ async function executeDAG(payload: { dag: ExecutionDAG; startIndex?: number }): 
     const task = executableTasks[i];
     const progress = Math.round(((i + 1) / executableTasks.length) * 100);
 
-    // Simulate task execution with timeout
     await new Promise((resolve) => setTimeout(resolve, 500));
-
-    // Mark task as completed
     DAGProcessor.completeTask(dag, task.id);
 
-    // Send progress update
-    self.postMessage({
+    sendMessage({
       type: 'DAG_PROGRESS',
       data: {
         dagId: dag.id,
@@ -116,67 +163,52 @@ async function executeDAG(payload: { dag: ExecutionDAG; startIndex?: number }): 
         progress,
         agentStatus: 'PROCESSING',
       },
-    } as WorkerResponse);
+    });
 
-    // Reset agent state after each task (prevent hard-lock)
-    self.postMessage({
+    sendMessage({
       type: 'AGENT_HEARTBEAT',
       data: { tier: 'T2', status: 'IDLE' },
-    } as WorkerResponse);
+    });
   }
 
-  // Send completion
-  self.postMessage({
+  sendMessage({
     type: 'DAG_COMPLETE',
     data: {
       dagId: dag.id,
       visualization: DAGProcessor.visualizeDAG(dag),
       finalAgentStatus: 'IDLE',
     },
-  } as WorkerResponse);
+  });
 }
 
-/**
- * Analyze business metrics in background
- */
 async function analyzeMetrics(payload: any): Promise<void> {
   const { metricsJson } = payload;
-
   const analysis = await groqClient.analyzeMetrics(metricsJson);
 
-  self.postMessage({
+  sendMessage({
     type: 'METRICS_ANALYSIS_COMPLETE',
-    data: {
-      analysis,
-      agentStatus: 'IDLE',
-    },
-  } as WorkerResponse);
+    data: { analysis, agentStatus: 'IDLE' },
+  });
 }
 
-/**
- * Stream Groq response with progress updates
- */
 async function streamGroqResponse(payload: any): Promise<void> {
   const { messages, taskId } = payload;
 
-  await groqClient.stream(messages, 0.7, 2000, (chunk: string) => {
-    self.postMessage({
+  await groqClient.stream(messages, 0.7, 1024, (chunk: string) => {
+    sendMessage({
       type: 'GROQ_STREAM_CHUNK',
       taskId,
       data: { chunk },
-    } as WorkerResponse);
+    });
   });
 
-  self.postMessage({
+  sendMessage({
     type: 'GROQ_STREAM_COMPLETE',
     taskId,
     data: { agentStatus: 'IDLE' },
-  } as WorkerResponse);
+  });
 }
 
-/**
- * Process video analytics in background
- */
 async function processVideoAnalytics(payload: any): Promise<void> {
   const { videos, targetViews } = payload;
 
@@ -195,15 +227,12 @@ async function processVideoAnalytics(payload: any): Promise<void> {
     agentStatus: 'IDLE',
   };
 
-  self.postMessage({
+  sendMessage({
     type: 'VIDEO_ANALYTICS_COMPLETE',
     data: analysis,
-  } as WorkerResponse);
+  });
 }
 
-/**
- * Process ad campaign metrics in background
- */
 async function processAdMetrics(payload: any): Promise<void> {
   const { campaigns, totalBudget } = payload;
 
@@ -214,28 +243,15 @@ async function processAdMetrics(payload: any): Promise<void> {
     bestPerformer: campaigns.reduce((a: any, b: any) => (a.roi > b.roi ? a : b)),
     worstPerformer: campaigns.reduce((a: any, b: any) => (a.roi < b.roi ? a : b)),
     budgetUtilization: (
-      (campaigns.reduce((sum: number, c: any) => sum + c.spent, 0) / totalBudget) *
-      100
+      (campaigns.reduce((sum: number, c: any) => sum + c.spent, 0) / totalBudget) * 100
     ).toFixed(1),
     agentStatus: 'IDLE',
   };
 
-  self.postMessage({
+  sendMessage({
     type: 'AD_METRICS_COMPLETE',
     data: analysis,
-  } as WorkerResponse);
-}
-
-/**
- * Send error message to main thread
- */
-function sendError(error: string): void {
-  // On error, always reset agent state to IDLE to prevent blocking
-  self.postMessage({
-    type: 'WORKER_ERROR',
-    error,
-    data: { agentStatus: 'IDLE', recovery: 'Agent state reset to IDLE' },
-  } as WorkerResponse);
+  });
 }
 
 export {};

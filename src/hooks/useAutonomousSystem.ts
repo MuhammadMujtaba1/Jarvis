@@ -1,39 +1,29 @@
 /**
  * DIAGNOSTIC FIX: USE AUTONOMOUS SYSTEM HOOK
- * - Complete rewrite to prevent infinite loops
- * - All async operations have 4000ms timeout with fail-fast
- * - No state updates from background intervals
- * - Safe initialization that doesn't block UI
+ * 
+ * DECOUPLED ARCHITECTURE:
+ * - UI/Voice runs on high-priority isolated channel
+ * - Background telemetry runs in Web Worker
+ * - Exponential backoff prevents blocking
+ * - 4000ms timeout with clean AbortController
  * - Agent state always resets to IDLE after operations
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { orchestrator } from '../agents/Orchestrator'
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { executionManager, TaskConfig } from '../utils/executionManager';
 
 interface SystemState {
-  isInitialized: boolean
-  isReady: boolean
-  metrics: any | null
-  error: string | null
-  isProcessing: boolean
-  agentStatus: 'IDLE' | 'PROCESSING' | 'WAITING'
+  isInitialized: boolean;
+  isReady: boolean;
+  metrics: any | null;
+  error: string | null;
+  isProcessing: boolean;
+  agentStatus: 'IDLE' | 'PROCESSING' | 'WAITING';
+  backoffActive: boolean;
+  backoffDelayMs: number | null;
 }
 
-// 4000ms hard timeout - matches worker timeout
-const HARD_TIMEOUT_MS = 4000;
-
-// Timeout wrapper - fails fast to never block UI
-const withTimeout = <T>(promise: Promise<T>, operation: string): Promise<T> => {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => 
-      setTimeout(() => {
-        console.warn(`[SYSTEM] ${operation} exceeded ${HARD_TIMEOUT_MS}ms - forcing IDLE state`);
-        reject(new Error('TIMEOUT'));
-      }, HARD_TIMEOUT_MS)
-    )
-  ]);
-};
+const TASK_TIMEOUT_MS = 4000;
 
 export const useAutonomousSystem = () => {
   const [systemState, setSystemState] = useState<SystemState>({
@@ -42,115 +32,80 @@ export const useAutonomousSystem = () => {
     metrics: null,
     error: null,
     isProcessing: false,
-    agentStatus: 'IDLE'
-  })
+    agentStatus: 'IDLE',
+    backoffActive: false,
+    backoffDelayMs: null
+  });
 
-  const orchestratorRef = useRef(orchestrator)
-  const initRef = useRef(false)
-  const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  const initRef = useRef(false);
+  const isUIBusyRef = useRef(false);
 
-  // Initialize once on mount - no state updates during init
+  const updateUI = useCallback((updates: Partial<SystemState>) => {
+    isUIBusyRef.current = true;
+    setSystemState(prev => ({ ...prev, ...updates }));
+    Promise.resolve().then(() => {
+      isUIBusyRef.current = false;
+    });
+  }, []);
+
   useEffect(() => {
-    if (initRef.current) return
-    initRef.current = true
+    if (initRef.current) return;
+    initRef.current = true;
 
-    // Non-blocking initialization
-    try {
-      // Orchestrator is already a singleton, just mark as ready
-      orchestratorRef.current = orchestrator
-      
-      setSystemState({
-        isInitialized: true,
-        isReady: true,
-        metrics: null,
-        error: null,
-        isProcessing: false,
-        agentStatus: 'IDLE'
-      })
+    console.log('[useAutonomousSystem] Initializing...');
 
-      // Start background task with timeout protection (no state updates)
-      intervalRef.current = setInterval(() => {
-        // Fire and forget - don't await, don't update state
-        withTimeout(
-          orchestratorRef.current.analyzeCustomerEmails?.() || Promise.resolve(),
-          'ANALYZE_EMAILS'
-        ).catch(() => {
-          // On timeout/error, force IDLE state
-          setSystemState(prev => ({ ...prev, agentStatus: 'IDLE' }));
-        });
+    const checkWorker = setInterval(() => {
+      if (executionManager.isWorkerReady()) {
+        clearInterval(checkWorker);
+        updateUI({ isInitialized: true, isReady: true });
+        console.log('[useAutonomousSystem] System ready');
+      }
+    }, 100);
 
-        withTimeout(
-          orchestratorRef.current.trackContentMetrics?.() || Promise.resolve(),
-          'TRACK_CONTENT'
-        ).catch(() => {
-          setSystemState(prev => ({ ...prev, agentStatus: 'IDLE' }));
-        });
-
-        withTimeout(
-          orchestratorRef.current.trackAdPerformance?.() || Promise.resolve(),
-          'TRACK_ADS'
-        ).catch(() => {
-          setSystemState(prev => ({ ...prev, agentStatus: 'IDLE' }));
-        });
-      }, 15000) // Run every 15 seconds - less aggressive
-
-    } catch (error) {
-      console.warn('[useAutonomousSystem] Init warning:', error);
-      setSystemState(prev => ({
-        ...prev,
-        isInitialized: true,
-        isReady: true,
-        agentStatus: 'IDLE'
-      }));
-    }
+    const safetyTimeout = setTimeout(() => {
+      clearInterval(checkWorker);
+      updateUI({ isInitialized: true, isReady: true });
+    }, 5000);
 
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+      clearInterval(checkWorker);
+      clearTimeout(safetyTimeout);
+      executionManager.cancelAll();
     };
-  }, []); // Empty deps - runs once only
+  }, [updateUI]);
 
-  // Update metrics only when explicitly called
   const updateMetrics = useCallback((newMetrics: any) => {
-    try {
-      orchestratorRef.current?.updateMetrics?.(newMetrics);
-    } catch (e) {
-      // Silently fail
-    }
-  }, []);
+    updateUI({ metrics: newMetrics });
+  }, [updateUI]);
 
-  // Set processing state with automatic reset to IDLE
   const setProcessing = useCallback((processing: boolean) => {
-    setSystemState(prev => ({ 
-      ...prev, 
-      isProcessing: processing,
-      agentStatus: processing ? 'PROCESSING' : 'IDLE'
-    }));
-    
-    // Auto-reset to IDLE after 4000ms max (matches worker timeout)
+    updateUI({ isProcessing: processing, agentStatus: processing ? 'PROCESSING' : 'IDLE' });
     if (processing) {
-      setTimeout(() => {
-        setSystemState(prev => ({ 
-          ...prev, 
-          isProcessing: false,
-          agentStatus: 'IDLE'
-        }));
-      }, HARD_TIMEOUT_MS);
+      setTimeout(() => updateUI({ isProcessing: false, agentStatus: 'IDLE' }), TASK_TIMEOUT_MS);
     }
-  }, []);
+  }, [updateUI]);
+
+  const pauseBackground = useCallback(() => {
+    executionManager.pauseAll();
+    updateUI({ backoffActive: true, backoffDelayMs: 30000 });
+  }, [updateUI]);
+
+  const resumeBackground = useCallback(() => {
+    executionManager.resumeAll();
+    updateUI({ backoffActive: false, backoffDelayMs: null });
+  }, [updateUI]);
 
   return {
     ...systemState,
     updateMetrics,
     setProcessing,
-    orchestrator: orchestratorRef.current
+    pauseBackground,
+    resumeBackground,
+    executionManager
   };
 };
 
-// Export for compatibility
-export const initializeOrchestrator = async (_apiKey: string) => orchestrator;
-export const getOrchestrator = () => orchestrator;
+export const initializeOrchestrator = async (_apiKey: string) => null;
+export const getOrchestrator = () => null;
 export const initializeGroqClient = (_apiKey: string) => {};
 export const initializeDatabase = async () => {};
