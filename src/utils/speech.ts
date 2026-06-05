@@ -1,40 +1,119 @@
 /**
- * SPEECH UTILITY - Text-to-Speech for JARVIS Responses
- * Uses Web Speech API with markdown filtering
+ * SPEECH UTILITY - JARVIS Text-to-Speech Engine
+ * Premium male voice with intelligent, calculated tone
  */
 
 const VOICE_CONFIG = {
-  rate: 0.95,
-  pitch: 1.1,
+  rate: 0.92,
+  pitch: 0.9,
   volume: 1.0,
 };
+
+// Priority list for male voices (UK/US English preferred)
+const MALE_VOICE_PRIORITY = [
+  'UK Male',
+  'UK English Male', 
+  'Google UK English Male',
+  'Google UK English',
+  'David',
+  'Mark',
+  'James',
+  'Richard',
+  'Microsoft David',
+  'en-GB',
+  'en-GB-WLS',
+  'Male',
+];
+
+const EXCLUDED_VOICES = [
+  'Female',
+  'Zira',
+  'Susan',
+  'Samantha',
+  'Victoria',
+  'Karen',
+  'Moira',
+  'Tessa',
+  'Fiona',
+  'Haruka',
+  'Yelda',
+];
 
 /**
  * Strip markdown formatting from text before speaking
  */
 export function stripMarkdown(text: string): string {
   return text
-    // Remove bold/italic markers
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
-    // Remove code blocks
     .replace(/```[\s\S]*?```/g, '')
     .replace(/`([^`]+)`/g, '$1')
-    // Remove headers
     .replace(/^#{1,6}\s+/gm, '')
-    // Remove links but keep text
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    // Remove list markers
     .replace(/^[\s]*[-*+]\s+/gm, '')
     .replace(/^[\s]*\d+\.\s+/gm, '')
-    // Clean up multiple spaces
     .replace(/\s+/g, ' ')
-    // Trim
     .trim();
 }
 
 /**
- * Speak text using Web Speech API
+ * Find the best male voice for JARVIS
+ */
+function selectBestMaleVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  if (!voices.length) return null;
+
+  // Filter out female voices first
+  const maleVoices = voices.filter(voice => {
+    const name = voice.name.toLowerCase();
+    return !EXCLUDED_VOICES.some(excluded => name.includes(excluded.toLowerCase()));
+  });
+
+  if (!maleVoices.length) {
+    console.warn('[Speech] No male voices found, using default');
+    return voices[0];
+  }
+
+  // Score each voice based on priority match
+  const scoredVoices = maleVoices.map(voice => {
+    let score = 0;
+    const name = voice.name.toLowerCase();
+    const lang = voice.lang.toLowerCase();
+
+    // UK English bonus (primary for JARVIS)
+    if (lang.includes('en-gb') || lang.includes('en-uk')) {
+      score += 100;
+    }
+
+    // Priority keywords
+    MALE_VOICE_PRIORITY.forEach((keyword, index) => {
+      if (name.includes(keyword.toLowerCase())) {
+        score += (50 - index);
+      }
+    });
+
+    // English language bonus
+    if (lang.startsWith('en')) {
+      score += 25;
+    }
+
+    // Prefer local voices (more reliable)
+    if (!voice.localService) {
+      score -= 10;
+    }
+
+    return { voice, score };
+  });
+
+  scoredVoices.sort((a, b) => b.score - a.score);
+  
+  const selected = scoredVoices[0]?.voice;
+  console.log('[Speech] Selected voice:', selected?.name, '(lang:', selected?.lang, ')');
+  
+  return selected;
+}
+
+/**
+ * Speak text using Web Speech API - JARVIS style
  */
 export function speak(text: string, options?: { interrupt?: boolean }): void {
   if (!text || typeof window === 'undefined') return;
@@ -45,43 +124,41 @@ export function speak(text: string, options?: { interrupt?: boolean }): void {
     return;
   }
 
-  // Interrupt current speech if requested
   if (options?.interrupt) {
     speechSynthesis.cancel();
   }
 
-  // Clean markdown from text
   const cleanText = stripMarkdown(text);
   if (!cleanText) return;
 
-  // Create utterance
+  let voices = speechSynthesis.getVoices();
+  if (voices.length === 0) {
+    speechSynthesis.getVoices();
+  }
+
   const utterance = new SpeechSynthesisUtterance(cleanText);
-  
-  // Configure voice
+
+  // JARVIS voice settings: calm, intelligent, calculated
   utterance.rate = VOICE_CONFIG.rate;
   utterance.pitch = VOICE_CONFIG.pitch;
   utterance.volume = VOICE_CONFIG.volume;
 
-  // Try to find a good English voice
-  const voices = speechSynthesis.getVoices();
-  const preferredVoice = voices.find(v => 
-    v.name.includes('Google') || 
-    v.name.includes('Microsoft') ||
-    v.name.includes('Samantha') ||
-    v.lang.startsWith('en-')
-  );
-  
-  if (preferredVoice) {
-    utterance.voice = preferredVoice;
+  const selectedVoice = selectBestMaleVoice(voices);
+  if (selectedVoice) {
+    utterance.voice = selectedVoice;
   }
 
   utterance.onerror = (event) => {
-    if (event.error !== 'interrupted') {
+    if (event.error !== 'interrupted' && event.error !== 'canceled') {
       console.error('[Speech] Error:', event.error);
     }
   };
 
-  // Speak
+  utterance.onend = () => {
+    console.log('[Speech] Finished');
+  };
+
+  console.log('[Speech] Speaking:', cleanText.substring(0, 50) + '...');
   speechSynthesis.speak(utterance);
 }
 
@@ -105,7 +182,7 @@ export function isSpeaking(): boolean {
 }
 
 /**
- * Get available voices (loads async)
+ * Get available voices
  */
 export function getVoices(): Promise<SpeechSynthesisVoice[]> {
   return new Promise((resolve) => {

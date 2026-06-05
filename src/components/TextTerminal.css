@@ -134,6 +134,7 @@
   border: 1px solid rgba(0, 255, 136, 0.4);
   border-radius: 4px;
   color: #00ff88;
+  caret-color: #00ff88;
   font-family: 'Courier New', monospace;
   font-size: 14px;
   resize: none;
@@ -153,6 +154,11 @@
 .terminal-textarea:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.terminal-textarea::selection {
+  background: rgba(0, 255, 136, 0.3);
+  color: #00ff88;
 }
 
 .input-controls {
