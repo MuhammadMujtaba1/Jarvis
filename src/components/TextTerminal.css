@@ -124,17 +124,18 @@
 
 .input-wrapper {
   position: relative;
+  background: transparent;
 }
 
 .terminal-textarea {
   width: 100%;
   padding: 12px;
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(0, 255, 136, 0.3);
+  background: transparent;
+  border: 1px solid rgba(0, 255, 136, 0.4);
   border-radius: 4px;
   color: #00ff88;
   font-family: 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 14px;
   resize: none;
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -142,15 +143,15 @@
 
 .terminal-textarea:focus {
   border-color: #00ff88;
-  box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+  box-shadow: 0 0 15px rgba(0, 255, 136, 0.3), inset 0 0 20px rgba(0, 255, 136, 0.05);
 }
 
 .terminal-textarea::placeholder {
-  color: #555;
+  color: rgba(0, 255, 136, 0.3);
 }
 
 .terminal-textarea:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
@@ -162,7 +163,7 @@
 
 .char-count {
   font-size: 10px;
-  color: #555;
+  color: rgba(0, 255, 136, 0.5);
 }
 
 /* Action Buttons */
@@ -233,8 +234,60 @@
 
 .hint-text {
   font-size: 10px;
-  color: #555;
+  color: rgba(0, 255, 136, 0.4);
   letter-spacing: 1px;
+}
+
+/* Response Display */
+.terminal-response {
+  margin-top: 16px;
+  padding: 12px;
+  background: rgba(0, 255, 136, 0.05);
+  border: 1px solid rgba(0, 255, 136, 0.2);
+  border-radius: 4px;
+}
+
+.response-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  color: rgba(0, 255, 136, 0.7);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(0, 255, 136, 0.1);
+}
+
+.response-content {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #00ff88;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* Speech Control Buttons */
+.speech-stop-btn,
+.speech-mute-btn {
+  background: transparent;
+  border: 1px solid rgba(0, 255, 136, 0.4);
+  color: #00ff88;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-family: 'Courier New', monospace;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.speech-stop-btn:hover,
+.speech-mute-btn:hover {
+  background: rgba(0, 255, 136, 0.1);
+  border-color: #00ff88;
 }
 
 /* Responsive */
