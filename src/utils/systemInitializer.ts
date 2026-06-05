@@ -11,7 +11,7 @@ interface ExtendedJarvisConfig extends JarvisConfig {
 
 const defaultConfig: ExtendedJarvisConfig = {
   groqApiKey: env.VITE_GROQ_API_KEY || '',
-  groqModel: env.VITE_GROQ_MODEL || 'mixtral-8x7b-32768',
+  groqModel: env.VITE_GROQ_MODEL || 'llama-3.3-70b-versatile',
   voiceEnabled: env.VITE_VOICE_ENABLED !== 'false',
   voiceLanguage: env.VITE_VOICE_LANG || 'en-US',
   maxConcurrentTasks: 5,
