@@ -1,56 +1,118 @@
+// ============================================================================
+// AGENT STATUS TYPES - 4-Tier State Machine
+// ============================================================================
+
+export type AgentStatus = 
+  | 'IDLE' 
+  | 'WAKING_UP' 
+  | 'PROCESSING' 
+  | 'SUBMITTING' 
+  | 'REVIEWING' 
+  | 'COMPLETED' 
+  | 'FAILED';
+
+export type AgentTier = 1 | 2 | 3 | 4;
+
+export interface AgentConfig {
+  id: string;
+  name: string;
+  tier: AgentTier;
+  role: string;
+  description: string;
+  memoryType: 'global' | 'contextual' | 'episodic' | 'semantic';
+}
+
+// ============================================================================
+// AGENT SUBMISSION REGISTRY
+// ============================================================================
+
+export interface AgentSubmission {
+  id: string;
+  agentId: string;
+  agentName: string;
+  tier: AgentTier;
+  timestamp: string;
+  promptAssigned: string;
+  outputData: string | object;
+  status: 'approved' | 'rejected_by_qa' | 'pending';
+  qaFeedback?: string;
+  artifactsCreated?: string[];
+}
+
+// ============================================================================
+// AGENT STATE STORE
+// ============================================================================
+
+export interface AgentState {
+  agentId: string;
+  status: AgentStatus;
+  currentTask?: string;
+  lastActivity: number;
+  submissions: string[];
+  errors: string[];
+}
+
+export interface AgentStore {
+  agents: Map<string, AgentState>;
+  setAgentStatus: (agentId: string, status: AgentStatus, task?: string) => void;
+  getAgentStatus: (agentId: string) => AgentState | undefined;
+  getAllAgents: () => AgentState[];
+  wakeUpAllAgents: () => void;
+}
+
+// ============================================================================
+// EXISTING TYPES (Preserved)
+// ============================================================================
+
 export interface Agent {
-  id: string
-  name: string
-  tier: 1 | 2 | 3 | 4
-  role: string
-  status: 'idle' | 'processing' | 'waiting'
+  id: string;
+  name: string;
+  tier: 1 | 2 | 3 | 4;
+  role: string;
+  status: 'idle' | 'processing' | 'waiting';
   memory: {
-    type: 'global' | 'contextual' | 'episodic' | 'semantic'
-    capacity: number
-    currentUsage: number
-  }
-  capabilities: string[]
+    type: 'global' | 'contextual' | 'episodic' | 'semantic';
+    capacity: number;
+    currentUsage: number;
+  };
+  capabilities: string[];
 }
 
 export interface AgentMessage {
-  id: string
-  from: string
-  to: string
-  type: 'task_assignment' | 'result' | 'error' | 'status_update'
-  payload: any
-  timestamp: number
-  priority: 'low' | 'medium' | 'high'
+  id: string;
+  from: string;
+  to: string;
+  type: 'task_assignment' | 'result' | 'error' | 'status_update';
+  payload: any;
+  timestamp: number;
+  priority: 'low' | 'medium' | 'high';
 }
 
 export interface Goal {
-  id: string
-  title: string
-  description: string
-  createdAt: number
-  status: 'planning' | 'executing' | 'completed' | 'failed'
-  taskDAG: Task[]
+  id: string;
+  title: string;
+  description: string;
+  createdAt: number;
+  status: 'planning' | 'executing' | 'completed' | 'failed';
+  taskDAG: Task[];
   userContext: {
-    habits: Record<string, any>
-    preferences: Record<string, any>
-    history: string[]
-  }
+    habits: Record<string, any>;
+    preferences: Record<string, any>;
+    history: string[];
+  };
 }
 
 export interface Task {
-  id: string
-  title: string
-  description: string
-  status: 'pending' | 'executing' | 'completed' | 'failed'
-  dependencies: string[]
-  priority: 'high' | 'medium' | 'low'
-  tier: 1 | 2 | 3 | 4
-  assignedAgent: string
-  createdAt: number
+  id: string;
+  title: string;
+  description: string;
+  status: 'pending' | 'executing' | 'completed' | 'failed';
+  dependencies: string[];
+  priority: 'high' | 'medium' | 'low';
+  tier: 1 | 2 | 3 | 4;
+  assignedAgent: string;
+  createdAt: number;
 }
-
-// ============================================================================
-// EXECUTION TYPES - DAG and Task Management
-// ============================================================================
 
 export type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
 
@@ -79,10 +141,6 @@ export interface ExecutionDAG {
   nodes: DAGNode[];
   createdAt: number;
 }
-
-// ============================================================================
-// BUSINESS METRICS TYPES
-// ============================================================================
 
 export interface ShortFormVideoMetrics {
   videosCreatedWeekly: number;
@@ -125,10 +183,6 @@ export interface FeatureCluster {
   userIds: string[];
 }
 
-// ============================================================================
-// AGENT OUTPUT TYPES
-// ============================================================================
-
 export interface BuilderOutput {
   code: string;
   language: string;
@@ -161,10 +215,6 @@ export interface OrchestratorRequest {
   context?: any;
 }
 
-// ============================================================================
-// SYSTEM STATE TYPES
-// ============================================================================
-
 export interface BusinessAgencyState {
   id: string;
   videoMetrics: ShortFormVideoMetrics;
@@ -185,10 +235,6 @@ export interface SystemMetrics {
   networkDownload: number;
   powerLevel: number;
 }
-
-// ============================================================================
-// CONVERSATION & MEMORY TYPES
-// ============================================================================
 
 export interface VoiceMessage {
   id: string;
@@ -218,10 +264,6 @@ export interface StoredMemory {
   createdAt: number;
   lastAccessedAt: number;
 }
-
-// ============================================================================
-// CONFIGURATION TYPES
-// ============================================================================
 
 export interface JarvisConfig {
   groqApiKey: string;

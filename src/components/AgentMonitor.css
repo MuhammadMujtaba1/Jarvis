@@ -12,62 +12,115 @@
 
 .agent-badge {
   padding: 10px;
-  background: rgba(0, 217, 255, 0.05);
-  border: 1px solid rgba(0, 217, 255, 0.2);
-  border-radius: 4px;
+  background: rgba(0, 210, 255, 0.03);
+  border: 1px solid rgba(0, 210, 255, 0.15);
+  border-radius: 6px;
   text-align: center;
   font-size: 10px;
   transition: all 0.3s ease;
+  cursor: pointer;
+  position: relative;
 }
 
 .agent-badge:hover {
-  background: rgba(0, 217, 255, 0.1);
-  border-color: var(--color-cyan);
-  box-shadow: 0 0 10px rgba(0, 217, 255, 0.3);
+  background: rgba(0, 210, 255, 0.08);
+  border-color: rgba(0, 210, 255, 0.35);
+  box-shadow: 0 0 20px rgba(0, 210, 255, 0.2);
+  transform: translateY(-2px);
 }
 
-.agent-name {
-  color: var(--color-text);
-  font-weight: bold;
-  margin-bottom: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.agent-badge.agent-active {
+  background: rgba(0, 210, 255, 0.06);
 }
 
 .agent-tier {
-  color: var(--color-cyan);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: bold;
-  text-shadow: 0 0 5px var(--color-cyan);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
+  letter-spacing: 1px;
+}
+
+.agent-name {
+  color: #00d2ff;
+  font-weight: bold;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 9px;
 }
 
 .agent-status {
-  font-size: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 8px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding: 2px 6px;
-  border-radius: 2px;
-  display: inline-block;
 }
 
-.agent-status.active {
-  background: rgba(0, 255, 0, 0.2);
-  color: #00ff00;
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
 }
 
+.agent-hint {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font-size: 7px;
+  color: rgba(0, 210, 255, 0.25);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.agent-badge:hover .agent-hint {
+  opacity: 1;
+}
+
+/* Status specific styles */
 .agent-status.idle {
-  background: rgba(136, 136, 136, 0.2);
-  color: #888888;
+  color: #00d2ff;
+}
+
+.agent-status.waking_up {
+  color: #ffaa00;
 }
 
 .agent-status.processing {
-  background: rgba(255, 136, 0, 0.2);
-  color: #ff8800;
-  animation: flicker 0.15s infinite;
+  color: #00d2ff;
 }
 
-.agent-status.waiting {
-  background: rgba(0, 217, 255, 0.2);
-  color: var(--color-cyan);
+.agent-status.submitting {
+  color: #aa88ff;
+}
+
+.agent-status.reviewing {
+  color: #ff88aa;
+}
+
+.agent-status.completed {
+  color: #00ff88;
+}
+
+.agent-status.failed {
+  color: #ff3366;
+}
+
+/* Pulse animation for active status */
+@keyframes pulse-dot {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
 }

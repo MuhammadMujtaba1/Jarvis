@@ -6,10 +6,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useAutonomousSystem } from '../hooks/useAutonomousSystem'
+import { useAgentStore } from '../hooks/useAgentStore'
 import MetricsDisplay from './MetricsDisplay'
 import AgentMonitor from './AgentMonitor'
 import ContentCreationTracker from './ContentCreationTracker'
 import TextTerminal from './TextTerminal'
+import { submitAgentWork } from '../utils/AgentSubmissionRegistry'
 import '../styles/enhancedDashboard.css'
 
 // Navigation link data with status
@@ -28,6 +30,7 @@ interface EnhancedDashboardProps {
 
 const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) => {
   const system = useAutonomousSystem()
+  const { wakeUpAllAgents, completeAgent, setAgentStatus, addSubmission, getAgent } = useAgentStore()
   const [timeDisplay, setTimeDisplay] = useState('00:00:00')
   const [systemLoad, setSystemLoad] = useState(45)
   const [jarvisResponse, setJarvisResponse] = useState<string | null>(null)
@@ -62,20 +65,50 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
     if (!command.trim() || system.isProcessing) return
     system.setProcessing(true)
     setJarvisResponse(null) // Clear previous response
+    
+    // Wake up all agents for new command
+    await wakeUpAllAgents(command)
+    
     try {
       console.log('[Dashboard] Command:', command)
+      console.log('[Dashboard] Sir, initiating agent hierarchy...')
+      
+      // Set Orchestrator to processing
+      setAgentStatus('orchestrator', 'PROCESSING', command)
+      
+      // Get response from Orchestrator
       const response = await system.orchestrator?.conversationResponse(command)
       console.log('[Dashboard] JARVIS response:', response)
+      
       // Handle object payloads correctly
       const responseText = response?.data?.text || response?.text || response;
-      setJarvisResponse(typeof responseText === 'string' ? responseText : JSON.stringify(responseText));
+      const finalResponse = typeof responseText === 'string' ? responseText : JSON.stringify(responseText);
+      setJarvisResponse(finalResponse);
+      
+      // Submit Orchestrator's work to registry
+      const submission = submitAgentWork(
+        'orchestrator',
+        'ORCHESTRATOR',
+        1,
+        command,
+        finalResponse,
+        []
+      );
+      addSubmission('orchestrator', submission.id);
+      
+      // Complete Orchestrator
+      completeAgent('orchestrator')
+      
     } catch (error) {
       console.error('[Dashboard] Command error:', error)
       setJarvisResponse('⚠️ Error: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      
+      // Mark Orchestrator as failed
+      setAgentStatus('orchestrator', 'FAILED', String(error))
     } finally {
       system.setProcessing(false)
     }
-  }, [system])
+  }, [system, wakeUpAllAgents, completeAgent, setAgentStatus, addSubmission])
 
   // Agent status should always start as IDLE on initial render
   const agentStatus = system.agentStatus || 'IDLE';
