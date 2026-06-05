@@ -11,6 +11,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { executionManager, TaskConfig } from '../utils/executionManager';
+import { getOrchestrator } from '../agents/Orchestrator';
 
 interface SystemState {
   isInitialized: boolean;
@@ -101,11 +102,12 @@ export const useAutonomousSystem = () => {
     setProcessing,
     pauseBackground,
     resumeBackground,
-    executionManager
+    executionManager,
+    orchestrator: getOrchestrator()
   };
 };
 
-export const initializeOrchestrator = async (_apiKey: string) => null;
-export const getOrchestrator = () => null;
+export const initializeOrchestrator = async (_apiKey: string) => getOrchestrator();
+export const getOrchestratorInstance = () => getOrchestrator();
 export const initializeGroqClient = (_apiKey: string) => {};
 export const initializeDatabase = async () => {};

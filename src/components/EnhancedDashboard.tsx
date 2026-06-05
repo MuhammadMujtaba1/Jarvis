@@ -30,6 +30,7 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
   const system = useAutonomousSystem()
   const [timeDisplay, setTimeDisplay] = useState('00:00:00')
   const [systemLoad, setSystemLoad] = useState(45)
+  const [jarvisResponse, setJarvisResponse] = useState<string | null>(null)
 
   // Clock update - stable, no dependencies
   useEffect(() => {
@@ -60,12 +61,17 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
   const handleCommandSubmit = useCallback(async (command: string) => {
     if (!command.trim() || system.isProcessing) return
     system.setProcessing(true)
+    setJarvisResponse(null) // Clear previous response
     try {
       console.log('[Dashboard] Command:', command)
       const response = await system.orchestrator?.conversationResponse(command)
       console.log('[Dashboard] JARVIS response:', response)
+      // Handle object payloads correctly
+      const responseText = response?.data?.text || response?.text || response;
+      setJarvisResponse(typeof responseText === 'string' ? responseText : JSON.stringify(responseText));
     } catch (error) {
       console.error('[Dashboard] Command error:', error)
+      setJarvisResponse('⚠️ Error: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       system.setProcessing(false)
     }
@@ -165,6 +171,7 @@ const EnhancedDashboard: React.FC<EnhancedDashboardProps> = ({ systemReady }) =>
         {/* Text Terminal - Command Input */}
         <TextTerminal 
           onCommandSubmit={handleCommandSubmit}
+          response={jarvisResponse}
           isProcessing={system.isProcessing}
           disabled={!systemReady || !system.isReady}
         />

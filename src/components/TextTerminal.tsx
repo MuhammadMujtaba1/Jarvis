@@ -8,12 +8,14 @@ import './TextTerminal.css';
 
 interface TextTerminalProps {
   onCommandSubmit: (command: string) => void;
+  response?: string | null;
   isProcessing: boolean;
   disabled?: boolean;
 }
 
 const TextTerminal: React.FC<TextTerminalProps> = ({ 
   onCommandSubmit, 
+  response,
   isProcessing,
   disabled = false 
 }) => {
@@ -93,6 +95,16 @@ const TextTerminal: React.FC<TextTerminalProps> = ({
           Press Enter to send
         </div>
       </div>
+
+      {/* Response Display Area */}
+      {response && (
+        <div className="terminal-response">
+          <div className="response-header">JARVIS RESPONSE:</div>
+          <div className="response-content">
+            {typeof response === 'string' ? response : JSON.stringify(response, null, 2)}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
